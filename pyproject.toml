@@ -1,0 +1,48 @@
+[project]
+name = "prefill-awareness-audit"
+version = "0.1.0"
+description = "Audit scaffold for prefill awareness in transcript-based AI evals"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = [
+    "inspect-ai>=0.3.0",
+    "anthropic>=0.40.0",
+    "numpy",
+    "matplotlib",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+]
+
+[project.urls]
+Homepage = "https://github.com/joeyagreco/prefill-awareness-audit"
+Repository = "https://github.com/joeyagreco/prefill-awareness-audit"
+Issues = "https://github.com/joeyagreco/prefill-awareness-audit/issues"
+
+[build-system]
+requires = ["setuptools>=68.0", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+]
