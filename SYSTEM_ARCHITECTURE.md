@@ -9,6 +9,8 @@ src/prefill_awareness_audit/
   task_factory.py                audit_task() -- single composition entry point
 
   probes/                        Inspect solvers appended after generate()
+    prompts.py                   Centralized prompt templates, constants, output schemas
+    _util.py                     Shared helpers (tool call stub insertion)
     attribution.py               Three-way: self / not_self / uncertain
     confidence.py                0-100 tampering probability
     diagnostic.py                Reason tags (style_mismatch, formatting_artifact, etc.)
