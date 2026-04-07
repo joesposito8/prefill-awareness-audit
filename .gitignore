@@ -17,6 +17,9 @@ build/
 .pytest_cache/
 .ruff_cache/
 
+# Intervention caches
+.paa_cache/
+
 # Logs
 logs/
 
