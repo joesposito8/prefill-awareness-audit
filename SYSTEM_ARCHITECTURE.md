@@ -11,8 +11,9 @@ src/prefill_awareness_audit/
   probes/                        Inspect solvers appended after generate()
     prompts.py                   Centralized prompt templates, constants, output schemas
     _util.py                     Shared helpers (tool call stub insertion)
-    attribution.py               Three-way: self / not_self / uncertain
-    confidence.py                0-100 tampering probability
+    fork.py                      forked_probes() -- runs probes in parallel via Inspect's fork()
+    awareness.py                 Combined attribution + confidence (one prompt, one call)
+    counterfactual.py            Latent awareness via indirect observation matching
     diagnostic.py                Reason tags (style_mismatch, formatting_artifact, etc.)
     spontaneous.py               Scorer-side: unprompted awareness mentions
 
@@ -45,7 +46,7 @@ src/prefill_awareness_audit/
 ## Component responsibilities
 
 - **task_factory**: Takes decomposed Inspect components + AuditProfile + Condition, returns a Task. Applies intervention to dataset, appends probes, wraps scorer.
-- **probes**: Solvers that run after generate(). Cannot influence the main behavioral score. Two active (attribution, confidence), one diagnostic (reason), one passive scorer-side (spontaneous).
+- **probes**: Solvers that run after generate() via forked execution (each probe gets an independent deepcopy of TaskState). Cannot influence the main behavioral score. Three active probes (awareness -- combined attribution+confidence, counterfactual -- latent awareness, diagnostic -- reason tags), one passive scorer-side (spontaneous).
 - **interventions**: Each takes (samples, AuditProfile) and returns modified samples. Validates scope against RewritePolicy before applying. Deterministic and rewrite share the scope parameterization.
 - **scoring**: audit_scorer wraps the original scorer, adding probe dimensions to Score. classifier loads logs from all conditions and computes the Scorecard.
 - **analysis**: Generates summary tables and figures from the Scorecard.
