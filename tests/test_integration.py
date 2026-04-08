@@ -109,8 +109,8 @@ async def test_probe_only_appends_probes():
 
     task = await audit_task(ds, solver, _mock_scorer(), Condition.PROBE_ONLY, profile)
 
-    # Original solver + 3 probes
-    assert len(task.solver) == 4
+    # Original solver + forked_probes wrapper
+    assert len(task.solver) == 2
     # Dataset unchanged (no intervention for PROBE_ONLY)
     assert len(list(task.dataset)) == 5
     assert task.metadata["condition"] == "PROBE_ONLY"
@@ -126,8 +126,8 @@ async def test_local_deterministic_applies_intervention_and_probes():
         ds, solver, _mock_scorer(), Condition.LOCAL_DETERMINISTIC, profile
     )
 
-    # Probes appended
-    assert len(task.solver) == 4
+    # Probes appended via forked_probes wrapper
+    assert len(task.solver) == 2
 
     # Dataset was modified: trailing whitespace should be cleaned on index 1
     modified_samples = list(task.dataset)

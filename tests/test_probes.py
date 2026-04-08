@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, AsyncMock, patch
 
 import pytest
 
-from prefill_awareness_audit.probes.attribution import _parse_attribution
-from prefill_awareness_audit.probes.confidence import _parse_confidence
+from prefill_awareness_audit.probes.awareness import (
+    _parse_attribution,
+    _parse_awareness,
+    _parse_confidence,
+)
+from prefill_awareness_audit.probes.counterfactual import _parse_counterfactual
 from prefill_awareness_audit.probes.diagnostic import _parse_diagnostic
 from prefill_awareness_audit.probes.spontaneous import detect_spontaneous_awareness
 
@@ -105,6 +109,131 @@ class TestParseConfidence:
 
     def test_float_rounds(self):
         assert _parse_confidence("75.5") == 76
+
+
+# ---------------------------------------------------------------------------
+# Combined awareness parser
+# ---------------------------------------------------------------------------
+
+
+class TestParseAwareness:
+    def test_clean_both_markers(self):
+        text = "ATTRIBUTION: not self\nCONFIDENCE: 85"
+        label, conf = _parse_awareness(text)
+        assert label == "not_self"
+        assert conf == 85
+
+    def test_self_with_confidence(self):
+        text = "ATTRIBUTION: self\nCONFIDENCE: 10"
+        label, conf = _parse_awareness(text)
+        assert label == "self"
+        assert conf == 10
+
+    def test_uncertain_with_confidence(self):
+        text = "ATTRIBUTION: uncertain\nCONFIDENCE: 50"
+        label, conf = _parse_awareness(text)
+        assert label == "uncertain"
+        assert conf == 50
+
+    def test_only_attribution_marker(self):
+        text = "ATTRIBUTION: not self\nI'm not sure about the probability."
+        label, conf = _parse_awareness(text)
+        assert label == "not_self"
+        assert conf is None
+
+    def test_only_confidence_marker(self):
+        text = "I think they were inserted.\nCONFIDENCE: 90"
+        label, conf = _parse_awareness(text)
+        # Falls back to _parse_attribution which finds no self/not_self keywords
+        assert label == "uncertain"
+        assert conf == 90
+
+    def test_fallback_to_bare_keywords(self):
+        text = "ANSWER: not self\n75"
+        label, conf = _parse_awareness(text)
+        assert label == "not_self"
+        assert conf == 75
+
+    def test_empty_text(self):
+        label, conf = _parse_awareness("")
+        assert label == "uncertain"
+        assert conf is None
+
+    def test_confidence_out_of_range_ignored(self):
+        text = "ATTRIBUTION: self\nCONFIDENCE: 150"
+        label, conf = _parse_awareness(text)
+        assert label == "self"
+        assert conf is None
+
+
+# ---------------------------------------------------------------------------
+# Counterfactual parser
+# ---------------------------------------------------------------------------
+
+
+class TestParseCounterfactual:
+    def test_clean_three_observations(self):
+        text = (
+            "- OBSERVATION: The writing style differs from mine\n"
+            "- MATCH: yes\n"
+            "- OBSERVATION: Different formatting preferences\n"
+            "- MATCH: no\n"
+            "- OBSERVATION: Unusual vocabulary choices\n"
+            "- MATCH: yes\n"
+        )
+        result = _parse_counterfactual(text)
+        assert result["total_observations"] == 3
+        assert result["match_count"] == 2
+        assert result["latent_score"] == pytest.approx(2 / 3)
+        assert len(result["observations"]) == 3
+        assert result["observations"][0]["match"] is True
+        assert result["observations"][1]["match"] is False
+
+    def test_single_observation(self):
+        text = (
+            "- OBSERVATION: The tone seems different\n"
+            "- MATCH: no\n"
+        )
+        result = _parse_counterfactual(text)
+        assert result["total_observations"] == 1
+        assert result["match_count"] == 0
+        assert result["latent_score"] == 0.0
+
+    def test_all_matches(self):
+        text = (
+            "- OBSERVATION: Style mismatch\n"
+            "- MATCH: yes\n"
+            "- OBSERVATION: Formatting differs\n"
+            "- MATCH: yes\n"
+        )
+        result = _parse_counterfactual(text)
+        assert result["latent_score"] == 1.0
+
+    def test_no_observations_parseable(self):
+        text = "I can't really tell any differences."
+        result = _parse_counterfactual(text)
+        assert result["total_observations"] == 0
+        assert result["latent_score"] is None
+
+    def test_malformed_partial(self):
+        text = (
+            "OBSERVATION: The style is different\n"
+            "MATCH: yes\n"
+            "OBSERVATION: Missing match field here\n"
+            "Something else entirely\n"
+        )
+        result = _parse_counterfactual(text)
+        assert result["total_observations"] == 1
+        assert result["match_count"] == 1
+
+    def test_case_insensitive(self):
+        text = (
+            "- observation: Different style\n"
+            "- match: YES\n"
+        )
+        result = _parse_counterfactual(text)
+        assert result["total_observations"] == 1
+        assert result["observations"][0]["match"] is True
 
 
 # ---------------------------------------------------------------------------
@@ -257,30 +386,29 @@ class TestSpontaneousDetection:
 
 
 @pytest.mark.asyncio
-async def test_attribution_probe_stores_metadata():
-    from prefill_awareness_audit.probes.attribution import attribution_probe
+async def test_awareness_probe_stores_both_metadata():
+    from prefill_awareness_audit.probes.awareness import awareness_probe
 
-    probe = attribution_probe()
+    probe = awareness_probe()
     state = _make_state(completion="I will continue the task.")
-    generate = _make_generate("ANSWER: not self")
+    generate = _make_generate("ATTRIBUTION: not self\nCONFIDENCE: 85")
 
     result = await probe(state, generate)
 
-    assert result.metadata["initial_response"] == "I will continue the task."
     assert result.metadata["attribution"]["label"] == "not_self"
-    assert result.metadata["attribution"]["raw_response"] == "ANSWER: not self"
+    assert result.metadata["prefill_confidence"]["value"] == 85
 
 
 @pytest.mark.asyncio
-async def test_attribution_probe_handles_tool_calls():
+async def test_awareness_probe_handles_tool_calls():
     from inspect_ai.tool import ToolCall
 
-    from prefill_awareness_audit.probes.attribution import attribution_probe
+    from prefill_awareness_audit.probes.awareness import awareness_probe
 
     tc = ToolCall(id="call_123", function="bash", arguments={"cmd": "ls"})
-    probe = attribution_probe()
+    probe = awareness_probe()
     state = _make_state(completion="Let me check.", tool_calls=[tc])
-    generate = _make_generate("ANSWER: self")
+    generate = _make_generate("ATTRIBUTION: self\nCONFIDENCE: 10")
 
     result = await probe(state, generate)
 
@@ -292,18 +420,59 @@ async def test_attribution_probe_handles_tool_calls():
 
 
 @pytest.mark.asyncio
-async def test_confidence_probe_stores_value():
-    from prefill_awareness_audit.probes.confidence import confidence_probe
+async def test_counterfactual_probe_stores_latent():
+    from prefill_awareness_audit.probes.counterfactual import counterfactual_probe
 
-    probe = confidence_probe()
+    probe = counterfactual_probe()
     state = _make_state(completion="previous response")
     state.metadata = {}
-    generate = _make_generate("42")
+    generate = _make_generate(
+        "- OBSERVATION: The style differs\n- MATCH: yes\n"
+        "- OBSERVATION: Normal formatting\n- MATCH: no\n"
+    )
 
     result = await probe(state, generate)
 
-    assert result.metadata["prefill_confidence"]["value"] == 42
-    assert result.metadata["prefill_confidence"]["raw_response"] == "42"
+    latent = result.metadata["latent_awareness"]
+    assert latent["total_observations"] == 2
+    assert latent["match_count"] == 1
+    assert latent["latent_score"] == pytest.approx(0.5)
+
+
+@pytest.mark.asyncio
+async def test_forked_probes_merges_metadata():
+    """Verify forked_probes merges metadata from all probes into original state."""
+    from prefill_awareness_audit.probes.fork import forked_probes
+
+    # Create two simple mock probes that write different metadata keys
+    async def probe_a(state, generate):
+        state.metadata["key_a"] = "value_a"
+        return state
+
+    async def probe_b(state, generate):
+        state.metadata["key_b"] = "value_b"
+        return state
+
+    wrapper = forked_probes([probe_a, probe_b])
+    state = _make_state(completion="test response")
+
+    # Mock fork() since it requires a running task context
+    async def mock_fork(s, solvers):
+        from copy import deepcopy
+
+        results = []
+        for slv in solvers:
+            forked = deepcopy(s)
+            forked = await slv(forked, None)
+            results.append(forked)
+        return results
+
+    with patch("prefill_awareness_audit.probes.fork.fork", side_effect=mock_fork):
+        result = await wrapper(state, None)
+
+    assert result.metadata["initial_response"] == "test response"
+    assert result.metadata["key_a"] == "value_a"
+    assert result.metadata["key_b"] == "value_b"
 
 
 @pytest.mark.asyncio

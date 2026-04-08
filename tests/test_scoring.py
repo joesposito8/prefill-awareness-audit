@@ -11,10 +11,11 @@ from inspect_ai.scorer import Score
 from prefill_awareness_audit.scoring.audit_scorer import audit_scorer
 
 
-def _make_state(metadata=None):
+def _make_state(metadata=None, completion=""):
     """Build a MagicMock TaskState for scorer tests."""
     state = MagicMock()
     state.metadata = metadata if metadata is not None else {}
+    state.output.completion = completion
     return state
 
 

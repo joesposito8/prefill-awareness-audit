@@ -10,7 +10,7 @@ from inspect_ai.scorer import Scorer
 from inspect_ai.solver import Solver
 
 from .interventions import apply_intervention
-from .probes import attribution_probe, confidence_probe, diagnostic_probe
+from .probes import awareness_probe, counterfactual_probe, diagnostic_probe, forked_probes
 from .scoring import audit_scorer
 from .types import AuditProfile, Condition
 
@@ -57,9 +57,11 @@ def build_audit_task(
         task_solver = list(solver)
     else:
         task_solver = list(solver) + [
-            attribution_probe(),
-            confidence_probe(),
-            diagnostic_probe(),
+            forked_probes([
+                awareness_probe(),
+                counterfactual_probe(),
+                diagnostic_probe(),
+            ])
         ]
 
     # Always wrap scorer for uniform output schema
