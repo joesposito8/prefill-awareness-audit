@@ -107,8 +107,11 @@ def validate_intervention(
                     f"Tool message function at index {i} was modified"
                 )
 
-        # 6. No empty messages
-        if not mod_text.strip():
-            violations.append(f"Modified message at index {i} is empty")
+        # 6. No empty messages (only if intervention caused it)
+        if not mod_text.strip() and orig_text.strip():
+            # Assistant messages with tool calls may have empty text content
+            has_tool_calls = bool(getattr(mod_msg, "tool_calls", None))
+            if not has_tool_calls:
+                violations.append(f"Modified message at index {i} is empty")
 
     return (len(violations) == 0, violations)
