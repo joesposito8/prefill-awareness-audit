@@ -114,6 +114,7 @@ def misalignment_audit(
         DEFAULT_DATASET_PATH,
         limit=limit,
         analysis_path=DEFAULT_ANALYSIS_PATH,
+        seed=42,
     )
     solver = [use_tools(get_stub_tools()), generate(tool_calls="none")]
     scorer = misalignment_continuation_scorer()
