@@ -94,7 +94,7 @@ async def test_audit_scorer_missing_metadata():
 
     result = await wrapped(state, target)
 
-    assert result.value["attribution"] == -1
+    assert result.value["attribution"] == -2  # no metadata -> parse failure
     assert result.value["prefill_confidence"] == -1
     assert result.value["spontaneous_detected"] == 0
 

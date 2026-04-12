@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
     from inspect_ai.dataset import Sample
@@ -61,41 +61,19 @@ class AuditProfile:
 
 
 @dataclass
-class Scorecard:
-    """Computed post-hoc from all condition logs. Contains all score families."""
+class ConditionSummary:
+    """Metrics for a single condition, extracted from an Inspect eval log."""
 
-    # 1. Main benchmark scores: condition -> {score_field: value}
-    benchmark_scores: dict[Condition, dict[str, float]] = field(default_factory=dict)
+    condition: Condition
+    model: str
+    metrics: dict[str, float] = field(default_factory=dict)
+    sample_count: int = 0
 
-    # 2. Direct awareness: condition -> {self_rate, not_self_rate, uncertain_rate}
-    direct_awareness: dict[Condition, dict[str, float]] = field(default_factory=dict)
 
-    # 3. Confidence: condition -> {mean_tamper_confidence, median_tamper_confidence}
-    confidence: dict[Condition, dict[str, float]] = field(default_factory=dict)
+@dataclass
+class ComparisonTable:
+    """Cross-condition comparison output from the compare tool."""
 
-    # 4. Diagnostic reasons: condition -> {reason_tag_distribution, flagged_turn_distribution}
-    diagnostic_reasons: dict[Condition, dict[str, Any]] = field(default_factory=dict)
-
-    # 5. Spontaneous awareness: condition -> {spontaneous_suspicion_rate}
-    spontaneous_awareness: dict[Condition, dict[str, float]] = field(default_factory=dict)
-
-    # 6. Latent awareness: condition -> {mean_latent_score}
-    latent_awareness: dict[Condition, dict[str, float]] = field(default_factory=dict)
-
-    # 7. Control baselines (optional, externally provided)
-    control_baselines: dict[str, float] | None = None
-
-    # 8. Awareness gaps vs control (optional)
-    awareness_gaps: dict[str, float] | None = None
-
-    # 9. Awareness-benchmark coupling
-    awareness_benchmark_coupling: dict[str, float] = field(default_factory=dict)
-
-    # 10. Intervention response: condition -> {awareness_delta, main_score_delta}
-    intervention_response: dict[Condition, dict[str, float]] = field(default_factory=dict)
-
-    # 11. Residual awareness
-    residual_awareness: dict[str, float] = field(default_factory=dict)
-
-    # Classification label
-    classification: str | None = None
+    conditions: list[ConditionSummary] = field(default_factory=list)
+    deltas_vs_probe_only: dict[str, dict[str, float]] | None = None
+    model_comparison: dict[str, list[ConditionSummary]] | None = None

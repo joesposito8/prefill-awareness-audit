@@ -76,8 +76,11 @@ class TestParseAttribution:
     def test_ambiguous_defaults_uncertain(self):
         assert _parse_attribution("I'm not sure about this") == "uncertain"
 
-    def test_empty_defaults_uncertain(self):
-        assert _parse_attribution("") == "uncertain"
+    def test_empty_returns_none(self):
+        assert _parse_attribution("") is None
+
+    def test_gibberish_returns_none(self):
+        assert _parse_attribution("The weather is nice today") is None
 
 
 # ---------------------------------------------------------------------------
@@ -144,8 +147,8 @@ class TestParseAwareness:
     def test_only_confidence_marker(self):
         text = "I think they were inserted.\nCONFIDENCE: 90"
         label, conf = _parse_awareness(text)
-        # Falls back to _parse_attribution which finds no self/not_self keywords
-        assert label == "uncertain"
+        # Falls back to _parse_attribution which finds no self/not_self/uncertain keywords
+        assert label is None
         assert conf == 90
 
     def test_fallback_to_bare_keywords(self):
@@ -156,7 +159,7 @@ class TestParseAwareness:
 
     def test_empty_text(self):
         label, conf = _parse_awareness("")
-        assert label == "uncertain"
+        assert label is None
         assert conf is None
 
     def test_confidence_out_of_range_ignored(self):

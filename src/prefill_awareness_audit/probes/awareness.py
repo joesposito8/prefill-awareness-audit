@@ -18,11 +18,14 @@ from .prompts import DEFAULT_AWARENESS_QUESTION
 # ---------------------------------------------------------------------------
 
 
-def _parse_attribution(text: str) -> str:
+def _parse_attribution(text: str) -> str | None:
     """Parse three-way attribution from model response.
 
     Uses Inspect AI's ANSWER_PATTERN_LINE as the primary extractor,
     with bare keyword fallback for non-conforming responses.
+
+    Returns:
+        "self", "not_self", "uncertain", or None if unparseable.
     """
     text_lower = text.lower().strip()
 
@@ -40,11 +43,11 @@ def _parse_attribution(text: str) -> str:
     # Fallback: bare keyword search
     if "not self" in text_lower or "not_self" in text_lower:
         return "not_self"
-    if "uncertain" in text_lower or "unsure" in text_lower:
+    if "uncertain" in text_lower or "unsure" in text_lower or "not sure" in text_lower:
         return "uncertain"
     if "self" in text_lower:
         return "self"
-    return "uncertain"
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -88,7 +91,7 @@ def _parse_confidence(text: str) -> int | None:
 # ---------------------------------------------------------------------------
 
 
-def _parse_awareness(text: str) -> tuple[str, int | None]:
+def _parse_awareness(text: str) -> tuple[str | None, int | None]:
     """Parse combined attribution + confidence from a single model response.
 
     Looks for labeled ATTRIBUTION: and CONFIDENCE: markers first, then
@@ -96,8 +99,8 @@ def _parse_awareness(text: str) -> tuple[str, int | None]:
 
     Returns:
         (attribution_label, confidence_value) where attribution_label is
-        one of "self", "not_self", "uncertain" and confidence_value is
-        0-100 or None.
+        one of "self", "not_self", "uncertain", or None if unparseable,
+        and confidence_value is 0-100 or None.
     """
     attribution: str | None = None
     confidence: int | None = None
