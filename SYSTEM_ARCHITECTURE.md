@@ -6,9 +6,12 @@
 src/prefill_awareness_audit/
   __init__.py                    Public API re-exports
   __main__.py                    CLI: compare subcommand
+  _registry.py                   Entry point for Inspect AI task discovery
+  _tasks.py                      Generic @task (task=, log=, data= input paths)
+  data.py                        Data loading, log discovery, DEFAULT_PROFILE
   types.py                      Condition, AuditTarget, RewritePolicy, AuditProfile,
                                  ConditionSummary, ComparisonTable
-  task_factory.py                audit_task() -- single composition entry point
+  task_factory.py                make_audit_task(), build_audit_task(), audit_task()
 
   probes/                        Inspect solvers appended after generate()
     prompts.py                   Centralized prompt templates, constants, output schemas
@@ -33,6 +36,80 @@ src/prefill_awareness_audit/
     compare.py                   Cross-condition/cross-model comparison from eval logs
     figures.py                   Matplotlib figure generation
 ```
+
+## Entry points and task discovery
+
+The package registers an Inspect AI entry point in `pyproject.toml`:
+
+```toml
+[project.entry-points.inspect_ai]
+prefill_awareness_audit = "prefill_awareness_audit._registry"
+```
+
+This lets `inspect eval prefill_awareness_audit` discover the generic `@task` without a file path. The `_registry.py` module imports the `@task` from `_tasks.py`, which Inspect's decorator-based discovery picks up.
+
+## Three input paths
+
+### Path 1 -- Audit from a prior eval (task-based discovery)
+
+```bash
+inspect eval prefill_awareness_audit -T task=my_benchmark
+```
+
+Uses `find_eval_log()` to search the log directory (defaults to `INSPECT_LOG_DIR` or `./logs`) for the most recent eval log matching the task name. Extracts conversation histories via `load_from_eval_log()`. Model specified via `--model` on the CLI.
+
+Optional `log_dir=` override: `-T log_dir=./experiment_logs`.
+
+### Path 2 -- Audit from raw data
+
+```bash
+inspect eval prefill_awareness_audit -T data=conversations.jsonl --model anthropic/claude-opus-4-6
+```
+
+Loads conversation data from a standard JSONL file. Each record is an Inspect AI Sample (object with `input` containing a list of chat messages).
+
+### Path 3 -- Custom @task (complex benchmarks)
+
+```python
+@task
+def misalignment_audit(condition="BASELINE", limit=None):
+    return make_audit_task(
+        data=load_dataset(limit=limit),
+        condition=condition,
+        profile=my_profile,
+        scorer=my_scorer(),
+        solver=[use_tools(tools), generate(tool_calls="none")],
+    )
+```
+
+Full control over data loading, target selection, scoring, and solver. Used when benchmarks need a custom dataset loader, target_span_selector, or scorer.
+
+## make_audit_task() API
+
+The primary user-facing composition helper:
+
+```python
+def make_audit_task(
+    data: str | Path | Dataset,
+    condition: str | Condition,
+    profile: AuditProfile | None = None,  # None = DEFAULT_PROFILE
+    scorer: Scorer | None = None,         # None = probes only
+    solver: list[Solver] | None = None,   # None = [generate()]
+    limit: int | None = None,
+    seed: int = 42,
+) -> Task:
+```
+
+Handles: data loading (if path), condition validation, intervention application (including the sync/async split via ThreadPoolExecutor), probe wiring, scorer wrapping.
+
+`DEFAULT_PROFILE` is a conservative profile allowing only BASELINE and PROBE_ONLY conditions, with `all_assistant_turns` as the target span selector. Intervention conditions require a benchmark-specific AuditProfile.
+
+## Data loading (data.py)
+
+- `load_conversations(path)` -- JSONL to list[Sample] via `json_dataset()`
+- `find_eval_log(task, log_dir)` -- log discovery via `list_eval_logs()` with task name filter
+- `load_from_eval_log(path, limit)` -- eval log to (list[Sample], model_id); preserves original scores in sample metadata
+- `all_assistant_turns(sample)` -- default target_span_selector, selects all assistant-role message indices
 
 ## Key types
 
@@ -87,7 +164,7 @@ Implemented in `scoring/metrics.py` with numpy only (no scipy):
 
 ## Component responsibilities
 
-- **task_factory**: Takes decomposed Inspect components + AuditProfile + Condition, returns a Task. Applies intervention to dataset, appends probes, wraps scorer.
+- **task_factory**: `make_audit_task()` is the primary API -- resolves defaults, loads data, applies interventions, delegates to `build_audit_task()`. The sync/async split (interventions need async for model calls, but @task is sync) is handled internally via ThreadPoolExecutor.
 - **probes**: Solvers that run after generate() via forked execution (each probe gets an independent deepcopy of TaskState). Cannot influence the main behavioral score. Three active probes (awareness -- combined attribution+confidence, counterfactual -- latent awareness, diagnostic -- reason tags), one passive scorer-side (spontaneous).
 - **interventions**: Each takes (samples, AuditProfile) and returns modified samples. Validates scope against RewritePolicy before applying. Deterministic and rewrite share the scope parameterization.
 - **scoring**: audit_scorer wraps the original scorer, adding probe dimensions to Score and registering custom metrics for per-condition aggregation. metrics.py defines all custom @metric functions.
@@ -109,6 +186,6 @@ No classification -- presents numbers only, the reader interprets.
 External eval repos are added as git submodules under `case_studies/`. Each integration file defines:
 
 1. An `AuditProfile` with benchmark-specific configuration
-2. A `@task` function that calls `audit_task()` with the benchmark's dataset, solver, and scorer
+2. A `@task` function that calls `make_audit_task()` with the benchmark's dataset, solver, and scorer
 
 The package handles probe insertion, intervention application, score wrapping, and metric computation. The benchmark integration only declares what to measure and what interventions are admissible.

@@ -20,50 +20,85 @@ cd prefill-awareness-audit
 uv sync
 ```
 
+Or install from pip:
+
+```bash
+pip install prefill-awareness-audit
+```
+
 ## Quick start
 
-The core integration point is an `AuditProfile` -- a declaration of what your benchmark measures, which intervention scopes are admissible, and how to locate the prefilled target span in each sample.
+### Audit a prior eval
+
+Run your benchmark first, then audit it by task name:
+
+```bash
+# 1. Run your benchmark
+inspect eval my_benchmark.py --model anthropic/claude-opus-4-6
+
+# 2. Audit it -- finds the most recent log for "my_benchmark" automatically
+inspect eval prefill_awareness_audit -T task=my_benchmark --model anthropic/claude-opus-4-6
+```
+
+The audit searches your log directory (defaults to `INSPECT_LOG_DIR` or `./logs`) for the most recent eval matching the task name, extracts the conversation histories, and runs awareness probes against them.
+
+### Audit raw conversation data
+
+Point the audit at a JSONL file of conversations:
+
+```bash
+inspect eval prefill_awareness_audit \
+    -T data=conversations.jsonl \
+    -T condition=PROBE_ONLY \
+    --model anthropic/claude-opus-4-6
+```
+
+Each JSONL record should be an Inspect AI Sample with an `input` field containing a list of chat messages (`{"role": "...", "content": "..."}`).
+
+### Custom @task for complex benchmarks
+
+For benchmarks with custom data loading, target selection, or scoring, use `make_audit_task()` directly:
 
 ```python
 from inspect_ai import task, Task
 from inspect_ai.solver import generate
-from prefill_awareness_audit import audit_task, AuditProfile, RewritePolicy, Condition
+from prefill_awareness_audit import make_audit_task, AuditProfile, RewritePolicy, Condition
 
 profile = AuditProfile(
-    name="misalignment-continuation",
+    name="my-benchmark",
     main_score_fields=["continues_misaligned"],
     target_span_selector=find_prefilled_assistant_turns,  # your function: Sample -> AuditTarget
     allowed_conditions=[
-        Condition.BASELINE,              # unmodified benchmark
-        Condition.PROBE_ONLY,            # adds awareness probes, no interventions
-        Condition.LOCAL_DETERMINISTIC,    # formatting cleanup on target span
-        Condition.LOCAL_REWRITE,         # model-based style rewrite on target span
+        Condition.BASELINE,
+        Condition.PROBE_ONLY,
+        Condition.LOCAL_DETERMINISTIC,
+        Condition.LOCAL_REWRITE,
     ],
     rewrite_policy=RewritePolicy(
-        protected_roles={"system"},      # never touch system messages
+        protected_roles=("system",),
         preserve_message_count=True,
         preserve_role_order=True,
     ),
 )
 
 @task
-def misalignment_audit(condition: str = "BASELINE") -> Task:
-    return audit_task(
-        dataset=load_misalignment_dataset(),
-        solver=[generate()],
-        scorer=misalignment_scorer(),
-        condition=Condition[condition],
+def my_benchmark_audit(condition: str = "BASELINE") -> Task:
+    return make_audit_task(
+        data=load_my_dataset(),
+        condition=condition,
         profile=profile,
+        solver=[generate()],
+        scorer=my_scorer(),
     )
 ```
 
 Run each condition with Inspect, then compare:
 
 ```bash
-inspect eval misalignment_audit.py -T condition=BASELINE
-inspect eval misalignment_audit.py -T condition=PROBE_ONLY
-inspect eval misalignment_audit.py -T condition=LOCAL_DETERMINISTIC
-inspect eval misalignment_audit.py -T condition=LOCAL_REWRITE
+inspect eval my_benchmark_audit.py -T condition=BASELINE
+inspect eval my_benchmark_audit.py -T condition=PROBE_ONLY
+inspect eval my_benchmark_audit.py -T condition=LOCAL_DETERMINISTIC
+inspect eval my_benchmark_audit.py -T condition=LOCAL_REWRITE
 ```
 
 If `PROBE_ONLY` shows high awareness but `LOCAL_DETERMINISTIC` drops it significantly, the benchmark is artifact-sensitive -- the model was reacting to formatting cues, not the eval's intended construct.
@@ -79,7 +114,13 @@ The audit appends **probes** (Inspect solvers) after the model generates its mai
 
 **Interventions** modify the dataset before the eval runs. Each targets a specific scope (local/block/global) and mechanism (deterministic cleanup or model-based rewrite). Comparing each branch to the probe-only baseline gives clean attribution of which cue types drive awareness.
 
-Post-hoc, the **classifier** loads logs from all conditions and produces a **Scorecard** with the final classification.
+Each eval run produces a complete awareness profile via Inspect's `@metric` system -- awareness rates, confidence distributions, coupling statistics, and diagnostic breakdowns all appear in Inspect's log viewer.
+
+Post-hoc, the **compare** tool loads logs from all conditions and generates cross-condition and cross-model comparison tables:
+
+```bash
+python -m prefill_awareness_audit compare --log-dir logs/my-experiment/ --figures
+```
 
 ## Development
 

@@ -18,6 +18,9 @@ dev = [
     "pytest-asyncio",
 ]
 
+[project.entry-points.inspect_ai]
+prefill_awareness_audit = "prefill_awareness_audit._registry"
+
 [project.urls]
 Homepage = "https://github.com/joeyagreco/prefill-awareness-audit"
 Repository = "https://github.com/joeyagreco/prefill-awareness-audit"
