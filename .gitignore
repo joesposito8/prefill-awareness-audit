@@ -29,6 +29,10 @@ logs/
 *.swp
 *.swo
 
+# Baseline awareness — generated data (fixture is committed)
+case_studies/baseline_awareness/data/*.jsonl
+!case_studies/baseline_awareness/data/sample.jsonl
+
 # OS
 .DS_Store
 Thumbs.db
