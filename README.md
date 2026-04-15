@@ -28,36 +28,42 @@ pip install prefill-awareness-audit
 
 ## Quick start
 
-### Audit a prior eval
+Two paths, depending on your question:
 
-Run your benchmark first, then audit it by task name:
+### Path 1: "How aware is the model?" (generic, zero code)
+
+Run any eval, then audit the log. The audit extracts conversation histories, attaches `source_model` ground truth from the log, and runs awareness probes.
 
 ```bash
 # 1. Run your benchmark
-inspect eval my_benchmark.py --model anthropic/claude-opus-4-6
+inspect eval inspect_evals/bfcl -T categories=multi_turn_base \
+    --model anthropic/claude-sonnet-4-6 --limit 20
 
-# 2. Audit it -- finds the most recent log for "my_benchmark" automatically
-inspect eval prefill_awareness_audit -T task=my_benchmark --model anthropic/claude-opus-4-6
+# 2. Audit -- same model (authentic prefill)
+inspect eval prefill_awareness_audit -T task=bfcl \
+    --model anthropic/claude-sonnet-4-6
+
+# 3. Audit -- different model (non-authentic prefill)
+inspect eval prefill_awareness_audit -T task=bfcl \
+    --model openai/gpt-4.1
 ```
 
-The audit searches your log directory (defaults to `INSPECT_LOG_DIR` or `./logs`) for the most recent eval matching the task name, extracts the conversation histories, and runs awareness probes against them.
+Step 2 measures recognition (does the model know it wrote this?). Step 3 measures detection (does the model know it didn't?). The confusion matrix tells the whole story. See [case_studies/bfcl/](case_studies/bfcl/) for the full walkthrough.
 
-### Audit raw conversation data
-
-Point the audit at a JSONL file of conversations:
+You can also audit raw conversation data:
 
 ```bash
 inspect eval prefill_awareness_audit \
     -T data=conversations.jsonl \
     -T condition=PROBE_ONLY \
-    --model anthropic/claude-opus-4-6
+    --model anthropic/claude-sonnet-4-6
 ```
 
-Each JSONL record should be an Inspect AI Sample with an `input` field containing a list of chat messages (`{"role": "...", "content": "..."}`).
+Each JSONL record should be an Inspect AI Sample with `input` (list of chat messages) and optional `metadata.source_model` (defaults to `"unknown"` if absent).
 
-### Custom @task for complex benchmarks
+### Path 2: "Is awareness confounding my eval?" (custom @task)
 
-For benchmarks with custom data loading, target selection, or scoring, use `make_audit_task()` directly:
+When you need intervention conditions (LOCAL_DETERMINISTIC, LOCAL_REWRITE, etc.) and benchmark re-scoring, write a custom `@task` with `make_audit_task()`:
 
 ```python
 from inspect_ai import task, Task
@@ -92,7 +98,7 @@ def my_benchmark_audit(condition: str = "BASELINE") -> Task:
     )
 ```
 
-Run each condition with Inspect, then compare:
+Run each condition, then compare:
 
 ```bash
 inspect eval my_benchmark_audit.py -T condition=BASELINE
@@ -101,7 +107,7 @@ inspect eval my_benchmark_audit.py -T condition=LOCAL_DETERMINISTIC
 inspect eval my_benchmark_audit.py -T condition=LOCAL_REWRITE
 ```
 
-If `PROBE_ONLY` shows high awareness but `LOCAL_DETERMINISTIC` drops it significantly, the benchmark is artifact-sensitive -- the model was reacting to formatting cues, not the eval's intended construct.
+If `PROBE_ONLY` shows high awareness but `LOCAL_DETERMINISTIC` drops it significantly, the benchmark is artifact-sensitive -- the model was reacting to formatting cues, not the eval's intended construct. See [case_studies/misalignment_audit.py](case_studies/misalignment_audit.py) for the reference example.
 
 ## How it works
 

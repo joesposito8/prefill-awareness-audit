@@ -5,7 +5,7 @@ from __future__ import annotations
 from inspect_ai import Task, task
 from inspect_ai.dataset import MemoryDataset
 
-from .data import DEFAULT_PROFILE, find_eval_log, load_from_eval_log
+from .data import PROBE_ONLY_PROFILE, find_eval_log, load_from_eval_log
 from .task_factory import make_audit_task
 
 
@@ -70,7 +70,7 @@ def prefill_awareness_audit(
         return make_audit_task(
             data=dataset,
             condition=condition,
-            profile=DEFAULT_PROFILE,
+            profile=PROBE_ONLY_PROFILE,
             seed=seed,
         )
 
@@ -78,7 +78,7 @@ def prefill_awareness_audit(
     return make_audit_task(
         data=data,
         condition=condition,
-        profile=DEFAULT_PROFILE,
+        profile=PROBE_ONLY_PROFILE,
         limit=limit,
         seed=seed,
     )

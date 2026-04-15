@@ -12,7 +12,7 @@ from inspect_ai.model import ChatMessageAssistant, ChatMessageUser
 
 from prefill_awareness_audit import Condition, RewritePolicy
 from prefill_awareness_audit.data import (
-    DEFAULT_PROFILE,
+    PROBE_ONLY_PROFILE,
     all_assistant_turns,
     find_eval_log,
     load_conversations,
@@ -53,6 +53,26 @@ def test_load_conversations(tmp_path: Path) -> None:
     assert samples[0].id == "s-001"
     assert isinstance(samples[0].input, list)
     assert len(samples[0].input) == 2
+    # source_model defaults to "unknown" when absent from JSONL
+    assert samples[0].metadata["source_model"] == "unknown"
+    assert samples[1].metadata["source_model"] == "unknown"
+
+
+def test_load_conversations_preserves_source_model(tmp_path: Path) -> None:
+    """Preserves source_model from JSONL metadata when present."""
+    jsonl = tmp_path / "data.jsonl"
+    record = {
+        "input": [
+            {"role": "user", "content": "Hello"},
+            {"role": "assistant", "content": "Hi"},
+        ],
+        "id": "s-010",
+        "metadata": {"source_model": "anthropic/claude-sonnet-4-6"},
+    }
+    jsonl.write_text(json.dumps(record))
+
+    samples = load_conversations(jsonl)
+    assert samples[0].metadata["source_model"] == "anthropic/claude-sonnet-4-6"
 
 
 def test_load_conversations_empty_file(tmp_path: Path) -> None:
@@ -173,6 +193,8 @@ def test_load_from_eval_log(mock_read: MagicMock) -> None:
     assert samples[0].id == "s-001"
     assert isinstance(samples[0].input, list)
     assert samples[0].metadata["original_scores"] is not None
+    assert samples[0].metadata["source_model"] == "anthropic/claude-opus-4-6"
+    assert samples[1].metadata["source_model"] == "anthropic/claude-opus-4-6"
 
 
 @patch("prefill_awareness_audit.data.read_eval_log")
@@ -253,28 +275,28 @@ def test_all_assistant_turns_string_input() -> None:
 
 
 # ---------------------------------------------------------------------------
-# DEFAULT_PROFILE
+# PROBE_ONLY_PROFILE
 # ---------------------------------------------------------------------------
 
 
 def test_default_profile_conditions() -> None:
-    """DEFAULT_PROFILE allows only BASELINE and PROBE_ONLY."""
-    assert DEFAULT_PROFILE.allowed_conditions == [
+    """PROBE_ONLY_PROFILE allows only BASELINE and PROBE_ONLY."""
+    assert PROBE_ONLY_PROFILE.allowed_conditions == [
         Condition.BASELINE,
         Condition.PROBE_ONLY,
     ]
 
 
 def test_default_profile_no_main_scores() -> None:
-    """DEFAULT_PROFILE has no benchmark score fields."""
-    assert DEFAULT_PROFILE.main_score_fields == []
+    """PROBE_ONLY_PROFILE has no benchmark score fields."""
+    assert PROBE_ONLY_PROFILE.main_score_fields == []
 
 
 def test_default_profile_conservative_policy() -> None:
-    """DEFAULT_PROFILE uses conservative rewrite policy defaults."""
-    assert DEFAULT_PROFILE.rewrite_policy == RewritePolicy()
+    """PROBE_ONLY_PROFILE uses conservative rewrite policy defaults."""
+    assert PROBE_ONLY_PROFILE.rewrite_policy == RewritePolicy()
 
 
 def test_default_profile_selector_is_all_assistant() -> None:
-    """DEFAULT_PROFILE uses all_assistant_turns as target selector."""
-    assert DEFAULT_PROFILE.target_span_selector is all_assistant_turns
+    """PROBE_ONLY_PROFILE uses all_assistant_turns as target selector."""
+    assert PROBE_ONLY_PROFILE.target_span_selector is all_assistant_turns

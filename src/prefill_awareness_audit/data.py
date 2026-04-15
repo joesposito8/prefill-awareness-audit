@@ -16,6 +16,8 @@ def load_conversations(path: str | Path) -> list[Sample]:
 
     Each record should be an Inspect AI Sample (object with ``input``
     containing a list of chat messages, and optional ``target`` / ``id``).
+    If a record's metadata lacks ``source_model``, it defaults to
+    ``"unknown"``.
 
     Args:
         path: Path to a JSONL file.
@@ -24,7 +26,12 @@ def load_conversations(path: str | Path) -> list[Sample]:
         List of Sample objects.
     """
     dataset = json_dataset(str(path))
-    return list(dataset)
+    samples = list(dataset)
+    for s in samples:
+        if s.metadata is None:
+            s.metadata = {}
+        s.metadata.setdefault("source_model", "unknown")
+    return samples
 
 
 def find_eval_log(task: str, log_dir: str = "") -> str:
@@ -113,7 +120,7 @@ def load_from_eval_log(
             Sample(
                 input=s.input,
                 id=str(s.id) if s.id is not None else None,
-                metadata={"original_scores": s.scores},
+                metadata={"original_scores": s.scores, "source_model": model_id},
             )
         )
 
@@ -147,15 +154,16 @@ def all_assistant_turns(sample: Sample) -> AuditTarget:
     )
 
 
-DEFAULT_PROFILE = AuditProfile(
-    name="default",
+PROBE_ONLY_PROFILE = AuditProfile(
+    name="probe-only",
     main_score_fields=[],
     target_span_selector=all_assistant_turns,
     allowed_conditions=[Condition.BASELINE, Condition.PROBE_ONLY],
     rewrite_policy=RewritePolicy(),
 )
-"""Conservative default profile — BASELINE and PROBE_ONLY only.
+"""Conservative profile — BASELINE and PROBE_ONLY only.
 
 Intervention conditions (LOCAL_DETERMINISTIC, LOCAL_REWRITE, etc.) require
-a benchmark-specific AuditProfile with an appropriate target_span_selector.
+a benchmark-specific AuditProfile with an appropriate target_span_selector
+and a custom @task with benchmark re-scoring.
 """

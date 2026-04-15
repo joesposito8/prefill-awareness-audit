@@ -1,7 +1,7 @@
-# prefill-awareness-audit__master
+# prefill-awareness-audit__ground-truth-architecture
 
 ## Current Initiative
-Core runtime complete (types, probes, scoring). Next: interventions (PAA-3), then task factory (PAA-4).
+Ground truth architecture via source_model metadata + BFCL demo case study. PROBE_ONLY_PROFILE replaces DEFAULT_PROFILE. ground_truth_metrics() replaces awareness_rates() with confusion matrix.
 
 ## Key Files
 - PROJECT_VISION.md -- scope, outcomes, non-goals

@@ -1,7 +1,7 @@
 """Prefill Awareness Audit — audit scaffold for transcript-based AI evals."""
 
 from .data import (
-    DEFAULT_PROFILE,
+    PROBE_ONLY_PROFILE,
     all_assistant_turns,
     find_eval_log,
     load_conversations,
@@ -20,7 +20,7 @@ from .types import (
 __all__ = [
     # Primary API
     "make_audit_task",
-    "DEFAULT_PROFILE",
+    "PROBE_ONLY_PROFILE",
     # Data loading
     "load_conversations",
     "load_from_eval_log",

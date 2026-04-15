@@ -8,7 +8,7 @@ src/prefill_awareness_audit/
   __main__.py                    CLI: compare subcommand
   _registry.py                   Entry point for Inspect AI task discovery
   _tasks.py                      Generic @task (task=, log=, data= input paths)
-  data.py                        Data loading, log discovery, DEFAULT_PROFILE
+  data.py                        Data loading, log discovery, PROBE_ONLY_PROFILE
   types.py                      Condition, AuditTarget, RewritePolicy, AuditProfile,
                                  ConditionSummary, ComparisonTable
   task_factory.py                make_audit_task(), build_audit_task(), audit_task()
@@ -92,7 +92,7 @@ The primary user-facing composition helper:
 def make_audit_task(
     data: str | Path | Dataset,
     condition: str | Condition,
-    profile: AuditProfile | None = None,  # None = DEFAULT_PROFILE
+    profile: AuditProfile | None = None,  # None = PROBE_ONLY_PROFILE
     scorer: Scorer | None = None,         # None = probes only
     solver: list[Solver] | None = None,   # None = [generate()]
     limit: int | None = None,
@@ -102,7 +102,7 @@ def make_audit_task(
 
 Handles: data loading (if path), condition validation, intervention application (including the sync/async split via ThreadPoolExecutor), probe wiring, scorer wrapping.
 
-`DEFAULT_PROFILE` is a conservative profile allowing only BASELINE and PROBE_ONLY conditions, with `all_assistant_turns` as the target span selector. Intervention conditions require a benchmark-specific AuditProfile.
+`PROBE_ONLY_PROFILE` is a conservative profile allowing only BASELINE and PROBE_ONLY conditions, with `all_assistant_turns` as the target span selector. Intervention conditions require a benchmark-specific AuditProfile.
 
 ## Data loading (data.py)
 

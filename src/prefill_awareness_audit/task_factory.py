@@ -68,7 +68,7 @@ def build_audit_task(
         ]
 
     # Always wrap scorer for uniform output schema
-    task_scorer = audit_scorer(scorer, profile.main_score_fields)
+    task_scorer = audit_scorer(scorer, profile)
 
     return Task(
         dataset=dataset,
@@ -187,7 +187,7 @@ def make_audit_task(
         data: Dataset, path to a JSONL file, or an Inspect Dataset.
         condition: Audit condition name or enum value.
         profile: Benchmark-specific audit configuration.  Defaults to
-            ``DEFAULT_PROFILE`` (BASELINE + PROBE_ONLY only).
+            ``PROBE_ONLY_PROFILE`` (BASELINE + PROBE_ONLY only).
         scorer: Benchmark scorer.  Defaults to a no-op scorer (probes only).
         solver: Benchmark solver chain.  Defaults to ``[generate()]``.
         limit: Maximum number of samples.
@@ -208,9 +208,9 @@ def make_audit_task(
 
     # Resolve profile
     if profile is None:
-        from .data import DEFAULT_PROFILE
+        from .data import PROBE_ONLY_PROFILE
 
-        profile = DEFAULT_PROFILE
+        profile = PROBE_ONLY_PROFILE
 
     # Resolve data to a Dataset
     if isinstance(data, (str, Path)):

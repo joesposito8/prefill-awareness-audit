@@ -16,7 +16,7 @@ from prefill_awareness_audit import (
     RewritePolicy,
     make_audit_task,
 )
-from prefill_awareness_audit.data import DEFAULT_PROFILE, all_assistant_turns
+from prefill_awareness_audit.data import PROBE_ONLY_PROFILE, all_assistant_turns
 from prefill_awareness_audit.types import AuditTarget
 
 
@@ -112,10 +112,10 @@ def test_make_audit_task_condition_string() -> None:
 
 
 def test_make_audit_task_default_profile() -> None:
-    """Uses DEFAULT_PROFILE when profile=None."""
+    """Uses PROBE_ONLY_PROFILE when profile=None."""
     ds = _make_dataset()
     task = make_audit_task(data=ds, condition="PROBE_ONLY")
-    assert task.metadata["profile"] == "default"
+    assert task.metadata["profile"] == "probe-only"
 
 
 def test_make_audit_task_default_solver() -> None:

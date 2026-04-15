@@ -109,6 +109,12 @@ def misalignment_audit(
         seed=42,
     )
 
+    # Misalignment scenarios are synthetic -- no real model generated them.
+    for sample in dataset:
+        if sample.metadata is None:
+            sample.metadata = {}
+        sample.metadata["source_model"] = "synthetic"
+
     return make_audit_task(
         data=dataset,
         condition=condition,

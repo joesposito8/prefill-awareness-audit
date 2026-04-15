@@ -2,7 +2,7 @@
 
 from .audit_scorer import audit_scorer
 from .metrics import (
-    awareness_rates,
+    ground_truth_metrics,
     confidence_stats,
     coupling_metrics,
     diagnostic_tag_rates,
@@ -12,7 +12,7 @@ from .metrics import (
 
 __all__ = [
     "audit_scorer",
-    "awareness_rates",
+    "ground_truth_metrics",
     "confidence_stats",
     "coupling_metrics",
     "diagnostic_tag_rates",
