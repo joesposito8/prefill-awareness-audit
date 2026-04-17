@@ -28,9 +28,18 @@ from prefill_awareness_audit.scoring.metrics import (
 
 
 def _ss(value: dict, metadata: dict | None = None) -> SampleScore:
-    """Create a SampleScore with given value dict and optional metadata."""
+    """Create a SampleScore with given value dict and optional metadata.
+
+    ``attribution`` is auto-routed from ``value`` into ``metadata`` so tests
+    can stay readable while matching the production convention (strings must
+    live in ``Score.metadata`` or Inspect's mean_score reducer demotes them).
+    """
+    value = dict(value)
+    meta = dict(metadata or {})
+    if "attribution" in value:
+        meta.setdefault("attribution", value.pop("attribution"))
     return SampleScore(
-        score=Score(value=value, metadata=metadata),
+        score=Score(value=value, metadata=meta),
         sample_id="test",
     )
 

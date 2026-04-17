@@ -22,6 +22,14 @@ class Condition(StrEnum):
     GLOBAL_DETERMINISTIC = "GLOBAL_DETERMINISTIC"
 
 
+class Attribution(StrEnum):
+    """Model's claim about a prefilled assistant turn's origin."""
+
+    SELF = "self"
+    NOT_SELF = "not_self"
+    UNCERTAIN = "uncertain"
+
+
 @dataclass(frozen=True)
 class AuditTarget:
     """Per-sample target span identifying which messages to intervene on."""

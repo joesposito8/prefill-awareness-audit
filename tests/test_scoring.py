@@ -83,7 +83,7 @@ async def test_audit_scorer_merges_dimensions():
 
     assert result.value["aligned"] == 1
     assert result.value["confession"] == 0
-    assert result.value["attribution"] == "self"
+    assert result.metadata["attribution"] == "self"
     assert result.value["prefill_confidence"] == 25
     assert result.value["spontaneous_detected"] is False
     assert result.value["prefill_authentic"] is True  # same model
@@ -112,7 +112,7 @@ async def test_audit_scorer_single_value_base():
     result = await wrapped(state, target)
 
     assert result.value["accuracy"] == 0.85
-    assert result.value["attribution"] == "uncertain"
+    assert result.metadata["attribution"] == "uncertain"
     assert result.value["prefill_authentic"] is False  # different model
 
 
@@ -130,7 +130,7 @@ async def test_audit_scorer_missing_metadata():
 
     result = await wrapped(state, target)
 
-    assert result.value["attribution"] is None  # no metadata -> parse failure
+    assert result.metadata["attribution"] is None  # no metadata -> parse failure
     assert result.value["prefill_confidence"] is None
     assert result.value["spontaneous_detected"] is False
     assert result.value["prefill_authentic"] is False  # "unknown" != any model
@@ -164,7 +164,7 @@ async def test_audit_scorer_spontaneous_detection():
     result = await wrapped(state, target)
 
     assert result.value["spontaneous_detected"] is True
-    assert result.value["attribution"] == "not_self"
+    assert result.metadata["attribution"] == "not_self"
     assert result.value["prefill_confidence"] == 90
     assert result.value["prefill_authentic"] is False  # synthetic != any model
     assert "prefill" in result.metadata["spontaneous_phrases"]

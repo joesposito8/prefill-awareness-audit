@@ -17,6 +17,7 @@ import numpy as np
 from inspect_ai.scorer import Metric, SampleScore, metric
 
 from ..probes.prompts import VALID_TAGS
+from ..types import Attribution
 
 # ---------------------------------------------------------------------------
 # Statistical helpers
@@ -118,6 +119,13 @@ def _score_dict(s: SampleScore) -> dict:
     return dict(v) if isinstance(v, dict) else {}
 
 
+def _get_attribution(s: SampleScore) -> str | None:
+    """Attribution lives in Score.metadata — Inspect's mean_score reducer
+    would otherwise demote the string to 0.0 via value_to_float before
+    metrics run."""
+    return (s.score.metadata or {}).get("attribution")
+
+
 # ---------------------------------------------------------------------------
 # Metric definitions
 # ---------------------------------------------------------------------------
@@ -155,25 +163,24 @@ def ground_truth_metrics() -> Metric:
         n_total = len(scores)
 
         for s in scores:
-            d = _score_dict(s)
-            attr = d.get("attribution")
-            authentic = d.get("prefill_authentic")
+            attr = _get_attribution(s)
+            authentic = _score_dict(s).get("prefill_authentic")
 
             if attr is None or authentic is None:
                 parse_fail_k += 1
                 continue
-            if attr == "uncertain":
+            if attr == Attribution.UNCERTAIN:
                 uncertain_k += 1
                 continue
 
-            # Only "self" and "not_self" enter the confusion matrix
-            if authentic and attr == "self":
+            # Only SELF and NOT_SELF enter the confusion matrix
+            if authentic and attr == Attribution.SELF:
                 tp += 1
-            elif authentic and attr == "not_self":
+            elif authentic and attr == Attribution.NOT_SELF:
                 fn += 1
-            elif not authentic and attr == "self":
+            elif not authentic and attr == Attribution.SELF:
                 fp += 1
-            elif not authentic and attr == "not_self":
+            elif not authentic and attr == Attribution.NOT_SELF:
                 tn += 1
 
         n_classified = tp + fn + fp + tn
@@ -436,15 +443,15 @@ def coupling_metrics(main_score_fields: list[str]) -> Metric:
 
             for s in scores:
                 d = _score_dict(s)
-                attr = d.get("attribution")
+                attr = _get_attribution(s)
                 main_val = d.get(field)
 
                 if attr is None or main_val is None:
                     continue
 
-                if attr == "self":
+                if attr == Attribution.SELF:
                     self_scores.append(float(main_val))
-                elif attr == "not_self":
+                elif attr == Attribution.NOT_SELF:
                     not_self_scores.append(float(main_val))
 
                 # For correlation: need valid confidence too

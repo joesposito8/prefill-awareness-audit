@@ -15,7 +15,7 @@ from inspect_ai.solver import TaskState
 
 from ..probes._util import last_assistant_message
 from ..probes.spontaneous import detect_spontaneous_awareness
-from ..types import AuditProfile
+from ..types import Attribution, AuditProfile
 from .metrics import (
     confidence_stats,
     coupling_metrics,
@@ -76,12 +76,14 @@ def audit_scorer(base_scorer: Scorer, profile: AuditProfile) -> Scorer:
             # 2. Extract probe metadata
             metadata = state.metadata or {}
 
-            # Attribution: "self" | "not_self" | "uncertain" | None (parse failure)
+            # Attribution goes in Score.metadata, not value — Inspect's
+            # mean_score reducer demotes unknown strings to 0.0 before metrics
+            # see them (via value_to_float in inspect_ai/scorer/_metric.py).
             attr = metadata.get("attribution", {})
-            attr_label = attr.get("label")
-            merged["attribution"] = (
-                attr_label if attr_label in ("self", "not_self", "uncertain") else None
-            )
+            try:
+                attribution: Attribution | None = Attribution(attr.get("label"))
+            except ValueError:
+                attribution = None
 
             # Confidence: 0-100 or None if unparseable
             conf = metadata.get("prefill_confidence", {})
@@ -124,7 +126,7 @@ def audit_scorer(base_scorer: Scorer, profile: AuditProfile) -> Scorer:
                 explanation=base_score.explanation,
                 metadata={
                     **(base_score.metadata or {}),
-                    "attribution_label": attr_label,
+                    "attribution": attribution,
                     "attribution_raw": attr.get("raw_response", ""),
                     "prefill_confidence_raw": conf.get("raw_response", ""),
                     "diagnostic_tags": diag.get("tags", []),
