@@ -36,3 +36,7 @@ case_studies/baseline_awareness/data/*.jsonl
 # OS
 .DS_Store
 Thumbs.db
+
+# Claude Code local state (zones file is intentionally tracked)
+.claude/commands/
+.claude/scheduled_tasks.lock
