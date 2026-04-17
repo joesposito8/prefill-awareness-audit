@@ -56,8 +56,15 @@ def find_eval_log(task: str, log_dir: str = "") -> str:
     """
     resolved_dir = log_dir or os.environ.get("INSPECT_LOG_DIR", "./logs")
 
+    # Normalize underscore/hyphen/case: Inspect rewrites function names from
+    # ``my_task`` → ``my-task`` when persisting log.eval.task, so the Python
+    # name users naturally type won't string-equal the stored task name.
+    def _norm(s: str) -> str:
+        return s.replace("_", "-").lower()
+
+    target = _norm(task)
     all_logs = list_eval_logs(resolved_dir)
-    matches = [info for info in all_logs if info.task == task]
+    matches = [info for info in all_logs if _norm(info.task) == target]
 
     if not matches:
         available = sorted({info.task for info in all_logs})

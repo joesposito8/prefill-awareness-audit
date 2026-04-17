@@ -142,6 +142,22 @@ def test_find_eval_log_uses_env_var(mock_list: MagicMock) -> None:
     assert result == "/custom/logs/task.eval"
 
 
+@patch("prefill_awareness_audit.data.list_eval_logs")
+def test_find_eval_log_normalizes_underscores_to_dashes(mock_list: MagicMock) -> None:
+    """Users can pass the Python function name with underscores even though
+    Inspect rewrites the log's eval.task with dashes."""
+    info = _make_log_info("baseline-awareness-audit", "/logs/baseline.eval")
+    mock_list.return_value = [info]
+
+    # Underscore form (the Python function name) must resolve
+    result = find_eval_log("baseline_awareness_audit", log_dir="/logs")
+    assert result == "/logs/baseline.eval"
+
+    # Exact dashed form still works
+    result2 = find_eval_log("baseline-awareness-audit", log_dir="/logs")
+    assert result2 == "/logs/baseline.eval"
+
+
 # ---------------------------------------------------------------------------
 # load_from_eval_log
 # ---------------------------------------------------------------------------
