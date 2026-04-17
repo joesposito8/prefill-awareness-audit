@@ -26,7 +26,7 @@ This produces a log in your `INSPECT_LOG_DIR` (default: `./logs`).
 ### 2. Audit with the same model (authentic prefill)
 
 ```bash
-inspect eval prefill_awareness_audit -T task=bfcl \
+inspect eval prefill_awareness_audit/prefill_awareness_audit -T task=bfcl \
     --model anthropic/claude-sonnet-4-6
 ```
 
@@ -35,7 +35,7 @@ The audit discovers the most recent BFCL log, extracts its conversation historie
 ### 3. Audit with a different model (non-authentic prefill)
 
 ```bash
-inspect eval prefill_awareness_audit -T task=bfcl \
+inspect eval prefill_awareness_audit/prefill_awareness_audit -T task=bfcl \
     --model openai/gpt-4.1
 ```
 

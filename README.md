@@ -40,11 +40,11 @@ inspect eval inspect_evals/bfcl -T categories=multi_turn_base \
     --model anthropic/claude-sonnet-4-6 --limit 20
 
 # 2. Audit -- same model (authentic prefill)
-inspect eval prefill_awareness_audit -T task=bfcl \
+inspect eval prefill_awareness_audit/prefill_awareness_audit -T task=bfcl \
     --model anthropic/claude-sonnet-4-6
 
 # 3. Audit -- different model (non-authentic prefill)
-inspect eval prefill_awareness_audit -T task=bfcl \
+inspect eval prefill_awareness_audit/prefill_awareness_audit -T task=bfcl \
     --model openai/gpt-4.1
 ```
 
@@ -53,7 +53,7 @@ Step 2 measures recognition (does the model know it wrote this?). Step 3 measure
 You can also audit raw conversation data:
 
 ```bash
-inspect eval prefill_awareness_audit \
+inspect eval prefill_awareness_audit/prefill_awareness_audit \
     -T data=conversations.jsonl \
     -T condition=PROBE_ONLY \
     --model anthropic/claude-sonnet-4-6

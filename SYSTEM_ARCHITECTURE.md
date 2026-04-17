@@ -46,14 +46,14 @@ The package registers an Inspect AI entry point in `pyproject.toml`:
 prefill_awareness_audit = "prefill_awareness_audit._registry"
 ```
 
-This lets `inspect eval prefill_awareness_audit` discover the generic `@task` without a file path. The `_registry.py` module imports the `@task` from `_tasks.py`, which Inspect's decorator-based discovery picks up.
+This lets `inspect eval prefill_awareness_audit/prefill_awareness_audit` discover the generic `@task` without a file path. The first segment is the entry-point package name, the second is the `@task` function name — Inspect only loads entry-point-registered tasks when the invocation contains `/`. The `_registry.py` module imports the `@task` from `_tasks.py`, which Inspect's decorator-based discovery picks up.
 
 ## Three input paths
 
 ### Path 1 -- Audit from a prior eval (task-based discovery)
 
 ```bash
-inspect eval prefill_awareness_audit -T task=my_benchmark
+inspect eval prefill_awareness_audit/prefill_awareness_audit -T task=my_benchmark
 ```
 
 Uses `find_eval_log()` to search the log directory (defaults to `INSPECT_LOG_DIR` or `./logs`) for the most recent eval log matching the task name. Extracts conversation histories via `load_from_eval_log()`. Model specified via `--model` on the CLI.
@@ -63,7 +63,7 @@ Optional `log_dir=` override: `-T log_dir=./experiment_logs`.
 ### Path 2 -- Audit from raw data
 
 ```bash
-inspect eval prefill_awareness_audit -T data=conversations.jsonl --model anthropic/claude-opus-4-6
+inspect eval prefill_awareness_audit/prefill_awareness_audit -T data=conversations.jsonl --model anthropic/claude-sonnet-4-6
 ```
 
 Loads conversation data from a standard JSONL file. Each record is an Inspect AI Sample (object with `input` containing a list of chat messages).

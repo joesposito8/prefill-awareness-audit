@@ -30,10 +30,10 @@ def prefill_awareness_audit(
 
     Examples::
 
-        inspect eval prefill_awareness_audit -T task=my_benchmark
-        inspect eval prefill_awareness_audit -T log=logs/my_benchmark.eval
-        inspect eval prefill_awareness_audit -T data=conversations.jsonl \\
-            --model anthropic/claude-opus-4-6
+        inspect eval prefill_awareness_audit/prefill_awareness_audit -T task=my_benchmark
+        inspect eval prefill_awareness_audit/prefill_awareness_audit -T log=logs/my_benchmark.eval
+        inspect eval prefill_awareness_audit/prefill_awareness_audit -T data=conversations.jsonl \\
+            --model anthropic/claude-sonnet-4-6
 
     Args:
         task: Task name — discovers the most recent matching eval log.
@@ -49,10 +49,10 @@ def prefill_awareness_audit(
         raise ValueError(
             "Provide a data source: task=<name>, log=<path>, or data=<path.jsonl>.\n\n"
             "Examples:\n"
-            "  inspect eval prefill_awareness_audit -T task=my_benchmark\n"
-            "  inspect eval prefill_awareness_audit -T log=logs/my_eval.eval\n"
-            "  inspect eval prefill_awareness_audit -T data=conversations.jsonl "
-            "--model anthropic/claude-opus-4-6"
+            "  inspect eval prefill_awareness_audit/prefill_awareness_audit -T task=my_benchmark\n"
+            "  inspect eval prefill_awareness_audit/prefill_awareness_audit -T log=logs/my_eval.eval\n"
+            "  inspect eval prefill_awareness_audit/prefill_awareness_audit -T data=conversations.jsonl "
+            "--model anthropic/claude-sonnet-4-6"
         )
     if sources > 1:
         raise ValueError("Provide exactly one of task=, log=, or data=.")
