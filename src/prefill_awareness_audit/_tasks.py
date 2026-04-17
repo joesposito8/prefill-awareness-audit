@@ -40,7 +40,7 @@ def prefill_awareness_audit(
         log: Explicit path to an eval log file.
         log_dir: Log directory override (default: INSPECT_LOG_DIR or ./logs).
         data: Path to a JSONL file of conversations.
-        condition: Audit condition name (PROBE_ONLY, BASELINE, etc.).
+        condition: Audit condition name (PROBE_ONLY, etc.).
         limit: Maximum number of samples.
         seed: Random seed.
     """
@@ -71,6 +71,7 @@ def prefill_awareness_audit(
             data=dataset,
             condition=condition,
             profile=PROBE_ONLY_PROFILE,
+            solver=[],  # conversations already complete — skip generate()
             seed=seed,
         )
 

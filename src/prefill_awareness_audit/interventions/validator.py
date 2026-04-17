@@ -1,6 +1,6 @@
 """Post-intervention structural validation.
 
-Validates that a modified Sample conforms to the RewritePolicy constraints
+Validates that a modified Sample conforms to the InterventionConstraints
 by comparing it against the original. Returns (passed, violations) where
 violations is a list of human-readable descriptions of what went wrong.
 """
@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from inspect_ai.dataset import Sample
 
-    from prefill_awareness_audit.types import RewritePolicy
+    from prefill_awareness_audit.types import InterventionConstraints
 
 
 def _content_to_text(content: Any) -> str:
@@ -37,15 +37,15 @@ def validate_intervention(
     original: Sample,
     modified: Sample,
     target_indices: list[int],
-    policy: RewritePolicy,
+    constraints: InterventionConstraints,
 ) -> tuple[bool, list[str]]:
-    """Validate a modified sample against the original and policy.
+    """Validate a modified sample against the original and constraints.
 
     Args:
         original: The unmodified sample.
         modified: The sample after intervention.
         target_indices: Indices that were targeted for modification.
-        policy: The rewrite policy controlling what changes are allowed.
+        constraints: Structural invariants the modification must preserve.
 
     Returns:
         A tuple of (passed, violations). ``passed`` is True if all checks
@@ -56,7 +56,7 @@ def validate_intervention(
     mod_messages = modified.input if isinstance(modified.input, list) else []
 
     # 1. Message count preserved
-    if policy.preserve_message_count and len(orig_messages) != len(mod_messages):
+    if constraints.preserve_message_count and len(orig_messages) != len(mod_messages):
         violations.append(
             f"Message count changed: {len(orig_messages)} -> {len(mod_messages)}"
         )
@@ -64,7 +64,7 @@ def validate_intervention(
         return (False, violations)
 
     # 2. Role order preserved
-    if policy.preserve_role_order:
+    if constraints.preserve_role_order:
         orig_roles = [m.role for m in orig_messages]
         mod_roles = [m.role for m in mod_messages]
         if orig_roles != mod_roles:
@@ -77,7 +77,7 @@ def validate_intervention(
         mod_text = _content_to_text(mod_msg.content)
 
         # 3. Protected roles untouched
-        if orig_msg.role in policy.protected_roles and orig_text != mod_text:
+        if orig_msg.role in constraints.protected_roles and orig_text != mod_text:
             violations.append(
                 f"Protected role '{orig_msg.role}' at index {i} was modified"
             )

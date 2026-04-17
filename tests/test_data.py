@@ -10,7 +10,7 @@ import pytest
 from inspect_ai.dataset import Sample
 from inspect_ai.model import ChatMessageAssistant, ChatMessageUser
 
-from prefill_awareness_audit import Condition, RewritePolicy
+from prefill_awareness_audit import Condition, InterventionConstraints
 from prefill_awareness_audit.data import (
     PROBE_ONLY_PROFILE,
     all_assistant_turns,
@@ -109,21 +109,13 @@ def test_find_eval_log_by_task(mock_list: MagicMock) -> None:
 
     result = find_eval_log("my_benchmark", log_dir="/logs")
     assert result == "/logs/2024-01-15_my_benchmark.eval"
-
-    # Verify filter was passed to list_eval_logs
-    call_kwargs = mock_list.call_args
-    assert call_kwargs[0][0] == "/logs"
-    assert call_kwargs[1]["filter"] is not None
+    mock_list.assert_called_once_with("/logs")
 
 
 @patch("prefill_awareness_audit.data.list_eval_logs")
 def test_find_eval_log_no_match(mock_list: MagicMock) -> None:
     """Raises FileNotFoundError with available task names when no match."""
-    # First call (filtered) returns empty, second call (all) returns other tasks
-    mock_list.side_effect = [
-        [],
-        [_make_log_info("other_task", "/logs/other.eval")],
-    ]
+    mock_list.return_value = [_make_log_info("other_task", "/logs/other.eval")]
 
     with pytest.raises(FileNotFoundError, match="other_task"):
         find_eval_log("nonexistent", log_dir="/logs")
@@ -132,7 +124,7 @@ def test_find_eval_log_no_match(mock_list: MagicMock) -> None:
 @patch("prefill_awareness_audit.data.list_eval_logs")
 def test_find_eval_log_empty_dir(mock_list: MagicMock) -> None:
     """Raises FileNotFoundError when log dir has no logs at all."""
-    mock_list.side_effect = [[], []]
+    mock_list.return_value = []
 
     with pytest.raises(FileNotFoundError, match="No eval logs found"):
         find_eval_log("any_task", log_dir="/empty")
@@ -162,7 +154,7 @@ def _make_eval_sample(
     _role_map = {"user": ChatMessageUser, "assistant": ChatMessageAssistant}
     sample = MagicMock()
     sample.id = sample_id
-    sample.input = [_role_map[role](content=content) for role, content in messages]
+    sample.messages = [_role_map[role](content=content) for role, content in messages]
     sample.scores = {"aligned": MagicMock(value=1)}
     return sample
 
@@ -221,14 +213,14 @@ def test_load_from_eval_log_empty(mock_read: MagicMock) -> None:
 
 
 @patch("prefill_awareness_audit.data.read_eval_log")
-def test_load_from_eval_log_string_input_raises(mock_read: MagicMock) -> None:
-    """Raises TypeError when a sample has a plain-string input."""
+def test_load_from_eval_log_empty_messages_raises(mock_read: MagicMock) -> None:
+    """Raises ValueError when a sample has no messages."""
     sample = MagicMock()
     sample.id = "bad"
-    sample.input = "just a string"
+    sample.messages = []
     mock_read.return_value = _make_eval_log(samples=[sample])
 
-    with pytest.raises(TypeError, match="plain-string input"):
+    with pytest.raises(ValueError, match="no messages"):
         load_from_eval_log("/logs/bad.eval")
 
 
@@ -275,14 +267,67 @@ def test_all_assistant_turns_string_input() -> None:
 
 
 # ---------------------------------------------------------------------------
+# latest_assistant_block
+# ---------------------------------------------------------------------------
+
+
+def test_latest_assistant_block_finds_trailing_run() -> None:
+    """Identifies the most recent contiguous assistant/tool block before the tail."""
+    from inspect_ai.model import ChatMessageSystem, ChatMessageTool
+
+    from prefill_awareness_audit.data import latest_assistant_block
+
+    sample = Sample(
+        input=[
+            ChatMessageSystem(content="system"),        # 0
+            ChatMessageUser(content="task"),            # 1
+            ChatMessageAssistant(content="first"),      # 2
+            ChatMessageUser(content="follow-up"),       # 3
+            ChatMessageAssistant(content="thinking"),   # 4
+            ChatMessageTool(content="result"),          # 5
+            ChatMessageAssistant(content="summary"),    # 6
+            ChatMessageUser(content="one more thing"),  # 7 — trailing user
+        ],
+        target="test",
+        id="s-blk",
+    )
+    target = latest_assistant_block(sample)
+    # Skip trailing user (7), then collect backward through 6, 5, 4
+    assert target.message_indices == [4, 5, 6]
+    assert target.target_kind == "assistant_block"
+    assert target.sample_id == "s-blk"
+
+
+def test_latest_assistant_block_no_assistants() -> None:
+    """Returns empty indices when there are no assistant turns."""
+    from prefill_awareness_audit.data import latest_assistant_block
+
+    sample = Sample(
+        input=[ChatMessageUser(content="only user")],
+        target="test",
+        id="s-no",
+    )
+    target = latest_assistant_block(sample)
+    assert target.message_indices == []
+
+
+def test_latest_assistant_block_string_input() -> None:
+    """Handles string input gracefully."""
+    from prefill_awareness_audit.data import latest_assistant_block
+
+    sample = Sample(input="raw string", target="test", id="s-str")
+    target = latest_assistant_block(sample)
+    assert target.message_indices == []
+
+
+# ---------------------------------------------------------------------------
 # PROBE_ONLY_PROFILE
 # ---------------------------------------------------------------------------
 
 
 def test_default_profile_conditions() -> None:
-    """PROBE_ONLY_PROFILE allows only BASELINE and PROBE_ONLY."""
+    """PROBE_ONLY_PROFILE allows only PROBE_ONLY."""
     assert PROBE_ONLY_PROFILE.allowed_conditions == [
-        Condition.BASELINE,
         Condition.PROBE_ONLY,
     ]
 
@@ -292,9 +337,9 @@ def test_default_profile_no_main_scores() -> None:
     assert PROBE_ONLY_PROFILE.main_score_fields == []
 
 
-def test_default_profile_conservative_policy() -> None:
-    """PROBE_ONLY_PROFILE uses conservative rewrite policy defaults."""
-    assert PROBE_ONLY_PROFILE.rewrite_policy == RewritePolicy()
+def test_default_profile_default_constraints() -> None:
+    """PROBE_ONLY_PROFILE uses default InterventionConstraints."""
+    assert PROBE_ONLY_PROFILE.intervention_constraints == InterventionConstraints()
 
 
 def test_default_profile_selector_is_all_assistant() -> None:

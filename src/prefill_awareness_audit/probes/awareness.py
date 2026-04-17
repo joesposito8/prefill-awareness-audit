@@ -32,7 +32,13 @@ def _parse_attribution(text: str) -> str | None:
     # Primary: Inspect AI's "ANSWER: <rest of line>" pattern
     match = re.search(ANSWER_PATTERN_LINE, text, re.IGNORECASE)
     if match:
-        answer = match.group(1).strip().lower()
+        answer = match.group(1).strip().lower().rstrip(".!,")
+        # Handle "me" / "not me" vocabulary (original LessWrong prompt style)
+        if answer == "not me" or answer.startswith("not me"):
+            return "not_self"
+        if answer == "me" or answer.startswith("me "):
+            return "self"
+        # Handle "self" / "not self" vocabulary
         if "not" in answer and "self" in answer:
             return "not_self"
         if answer == "self" or answer.startswith("self"):
@@ -41,11 +47,14 @@ def _parse_attribution(text: str) -> str | None:
             return "uncertain"
 
     # Fallback: bare keyword search
-    if "not self" in text_lower or "not_self" in text_lower:
+    if "not self" in text_lower or "not_self" in text_lower or "not me" in text_lower:
         return "not_self"
     if "uncertain" in text_lower or "unsure" in text_lower or "not sure" in text_lower:
         return "uncertain"
     if "self" in text_lower:
+        return "self"
+    # Only treat bare "me" as self if it's the entire response or followed by punctuation
+    if re.search(r"\bme\b", text_lower) and len(text_lower) < 50:
         return "self"
     return None
 

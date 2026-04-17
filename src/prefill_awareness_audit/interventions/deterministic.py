@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from inspect_ai.dataset import Sample
 
-    from prefill_awareness_audit.types import RewritePolicy
+    from prefill_awareness_audit.types import InterventionConstraints
 
 
 # ---------------------------------------------------------------------------
@@ -111,7 +111,7 @@ def strip_provenance_only(text: str) -> str:
 def deterministic_intervention(
     sample: Sample,
     indices: list[int],
-    policy: RewritePolicy,
+    constraints: InterventionConstraints,
     provenance_only_indices: list[int] | None = None,
 ) -> Sample:
     """Apply deterministic cleanup to a deep-copied sample at specified indices.
@@ -119,7 +119,7 @@ def deterministic_intervention(
     Args:
         sample: Original sample (not modified).
         indices: Message indices to apply full cleanup to.
-        policy: Controls which roles are protected.
+        constraints: Specifies which roles are protected from modification.
         provenance_only_indices: Indices that get only provenance stripping
             (used for protected roles in global scope).
 
@@ -137,7 +137,7 @@ def deterministic_intervention(
         if idx >= len(messages):
             continue
         msg = messages[idx]
-        if msg.role in policy.protected_roles:
+        if msg.role in constraints.protected_roles:
             continue
         msg.text = apply_deterministic_cleanup(msg.text)
 

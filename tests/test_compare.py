@@ -30,19 +30,19 @@ def _cs(
 class TestCompareConditions:
     def test_delta_vs_probe_only(self):
         summaries = [
-            _cs(Condition.PROBE_ONLY, metrics={"attribution_self_rate": 0.3, "confidence_mean": 70.0}),
-            _cs(Condition.LOCAL_DETERMINISTIC, metrics={"attribution_self_rate": 0.5, "confidence_mean": 55.0}),
+            _cs(Condition.PROBE_ONLY, metrics={"recognition_rate": 0.3, "confidence_mean": 70.0}),
+            _cs(Condition.LOCAL_DETERMINISTIC, metrics={"recognition_rate": 0.5, "confidence_mean": 55.0}),
         ]
         table = compare_conditions(summaries)
         assert table.deltas_vs_probe_only is not None
         delta = table.deltas_vs_probe_only["LOCAL_DETERMINISTIC"]
-        assert delta["attribution_self_rate"] == pytest.approx(0.2)
+        assert delta["recognition_rate"] == pytest.approx(0.2)
         assert delta["confidence_mean"] == pytest.approx(-15.0)
 
     def test_no_probe_only(self):
         summaries = [
-            _cs(Condition.LOCAL_DETERMINISTIC, metrics={"attribution_self_rate": 0.5}),
-            _cs(Condition.LOCAL_REWRITE, metrics={"attribution_self_rate": 0.7}),
+            _cs(Condition.LOCAL_DETERMINISTIC, metrics={"recognition_rate": 0.5}),
+            _cs(Condition.LOCAL_REWRITE, metrics={"recognition_rate": 0.7}),
         ]
         table = compare_conditions(summaries)
         # No PROBE_ONLY -> no deltas
@@ -101,16 +101,25 @@ class TestFormatComparisonTable:
             _cs(
                 Condition.PROBE_ONLY,
                 metrics={
-                    "attribution_self_rate": 0.35,
-                    "attribution_self_rate_ci_lo": 0.23,
-                    "attribution_self_rate_ci_hi": 0.49,
-                    "attribution_not_self_rate": 0.50,
-                    "attribution_not_self_rate_ci_lo": 0.37,
-                    "attribution_not_self_rate_ci_hi": 0.63,
-                    "attribution_uncertain_rate": 0.15,
-                    "attribution_uncertain_rate_ci_lo": 0.07,
-                    "attribution_uncertain_rate_ci_hi": 0.28,
-                    "attribution_n_samples": 50,
+                    "recognition_rate": 0.856,
+                    "recognition_rate_ci_lo": 0.773,
+                    "recognition_rate_ci_hi": 0.913,
+                    "detection_rate": 0.920,
+                    "detection_rate_ci_lo": 0.842,
+                    "detection_rate_ci_hi": 0.962,
+                    "false_attribution_rate": 0.080,
+                    "false_attribution_rate_ci_lo": 0.038,
+                    "false_attribution_rate_ci_hi": 0.158,
+                    "miss_rate": 0.144,
+                    "miss_rate_ci_lo": 0.087,
+                    "miss_rate_ci_hi": 0.227,
+                    "g_mean": 0.887,
+                    "uncertain_rate": 0.050,
+                    "uncertain_rate_ci_lo": 0.020,
+                    "uncertain_rate_ci_hi": 0.119,
+                    "n_samples": 100,
+                    "n_classified": 95,
+                    "n_parse_fail": 2,
                     "confidence_mean": 68.2,
                     "confidence_mean_ci_lo": 63.0,
                     "confidence_mean_ci_hi": 73.4,
@@ -121,27 +130,31 @@ class TestFormatComparisonTable:
                     "spontaneous_rate_ci_lo": 0.07,
                     "spontaneous_rate_ci_hi": 0.28,
                     "spontaneous_n_samples": 50,
-                    "latent_awareness_mean": 0.42,
-                    "latent_awareness_mean_ci_lo": 0.35,
-                    "latent_awareness_mean_ci_hi": 0.49,
-                    "latent_awareness_median": 0.40,
-                    "latent_awareness_std": 0.15,
-                    "latent_awareness_n_samples": 45,
+                    "latent_prefill_rate": 0.42,
+                    "latent_prefill_rate_ci_lo": 0.35,
+                    "latent_prefill_rate_ci_hi": 0.49,
+                    "latent_eval_rate": 0.20,
+                    "latent_eval_rate_ci_lo": 0.12,
+                    "latent_eval_rate_ci_hi": 0.30,
+                    "latent_n_samples": 45,
+                    "latent_n_parse_fail": 2,
                 },
             ),
         ]
         table = ComparisonTable(conditions=summaries)
         output = format_comparison_table(table)
         assert "PROBE_ONLY" in output
-        assert "0.350" in output  # self_rate
-        assert "n=50" in output
+        assert "Ground truth" in output
+        assert "0.856" in output  # recognition_rate
+        assert "0.887" in output  # g_mean
+        assert "n_classified=95" in output
 
     def test_delta_section(self):
         summaries = [
-            _cs(Condition.PROBE_ONLY, metrics={"attribution_self_rate": 0.3, "confidence_mean": 70.0}),
-            _cs(Condition.LOCAL_DETERMINISTIC, metrics={"attribution_self_rate": 0.5, "confidence_mean": 55.0}),
+            _cs(Condition.PROBE_ONLY, metrics={"recognition_rate": 0.3, "confidence_mean": 70.0}),
+            _cs(Condition.LOCAL_DETERMINISTIC, metrics={"recognition_rate": 0.5, "confidence_mean": 55.0}),
         ]
         table = compare_conditions(summaries)
         output = format_comparison_table(table)
         assert "Deltas vs PROBE_ONLY" in output
-        assert "+0.200" in output  # self_rate delta
+        assert "+0.200" in output  # recognition_rate delta

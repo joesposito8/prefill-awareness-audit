@@ -31,6 +31,40 @@ from pathlib import Path
 # Match the package's central seed convention (make_audit_task default).
 SEED = 42
 
+# Arena model names → Inspect AI provider prefix.  Inspect requires
+# "provider/model" format for source_model so the scorer can compare
+# it against str(state.model).  Add entries here when new providers
+# appear in the Arena data.
+_PROVIDER_PREFIX: dict[str, str] = {
+    "claude": "anthropic",
+    "gemini": "google",
+    "gpt": "openai",
+    "o1": "openai",
+    "o3": "openai",
+    "o4": "openai",
+    "deepseek": "deepseek",
+    "llama": "together",
+    "mistral": "mistral",
+    "command": "cohere",
+}
+
+
+def _canonicalize_model(arena_name: str) -> str:
+    """Convert a bare Arena model name to Inspect's 'provider/model' format.
+
+    Raises ValueError if the provider cannot be inferred.
+    """
+    if "/" in arena_name:
+        return arena_name  # already prefixed
+    prefix = arena_name.split("-")[0]
+    provider = _PROVIDER_PREFIX.get(prefix)
+    if provider is None:
+        raise ValueError(
+            f"Cannot infer provider for Arena model {arena_name!r}. "
+            f"Add an entry to _PROVIDER_PREFIX in {__file__}."
+        )
+    return f"{provider}/{arena_name}"
+
 
 def _extract_text(content: list[dict] | str) -> str:
     """Extract plain text from Arena content blocks.
@@ -241,7 +275,7 @@ def main() -> None:
             "input": conv_a,
             "id": f"arena-{question_id}-a",
             "metadata": {
-                "source_model": model_a,
+                "source_model": _canonicalize_model(model_a),
                 "arena_question_id": question_id,
                 "arena_pair_model": model_b,
                 "language": language,
@@ -260,7 +294,7 @@ def main() -> None:
             "input": conv_b,
             "id": f"arena-{question_id}-b",
             "metadata": {
-                "source_model": model_b,
+                "source_model": _canonicalize_model(model_b),
                 "arena_question_id": question_id,
                 "arena_pair_model": model_a,
                 "language": language,

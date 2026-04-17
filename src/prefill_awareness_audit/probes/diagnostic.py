@@ -87,9 +87,19 @@ def diagnostic_probe(
                 state = await generate(
                     state, response_schema=DIAGNOSTIC_SCHEMA
                 )
-            except Exception:
-                # Model doesn't support structured output -- fall back
-                logger.debug("Structured output not supported, falling back")
+            except Exception as exc:
+                # Fall back to unstructured generation.  The cause may be a
+                # model that doesn't support structured output (benign) or a
+                # transient API failure (rate limit, network, auth) — both
+                # degrade to free-form output that often fails to parse, so
+                # log loudly so the cause is visible in the run output.
+                logger.warning(
+                    "diagnostic_probe: structured output call failed (%s: %s); "
+                    "falling back to unstructured generation. Sample id=%s",
+                    type(exc).__name__,
+                    exc,
+                    state.sample_id,
+                )
                 state = await generate(state)
         else:
             state = await generate(state)

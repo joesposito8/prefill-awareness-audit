@@ -1,8 +1,9 @@
 """Interventions -- dataset transformers parameterized by (scope, mechanism).
 
 The ``apply_intervention`` function is the single entry point. It validates
-the condition against the profile's rewrite policy, resolves scope, dispatches
-to the appropriate transformer, and runs structural validation on the result.
+the condition against the profile's allowed_conditions, resolves scope,
+dispatches to the appropriate transformer, and runs structural validation
+on the result.
 """
 
 from __future__ import annotations
@@ -28,15 +29,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Maps each condition to the RewritePolicy attribute that must be True.
-_CONDITION_POLICY_MAP: dict[Condition, str] = {
-    Condition.LOCAL_DETERMINISTIC: "allow_local_deterministic",
-    Condition.LOCAL_REWRITE: "allow_local_rewrite",
-    Condition.BLOCK_DETERMINISTIC: "allow_block_deterministic",
-    Condition.BLOCK_REWRITE: "allow_block_rewrite",
-    Condition.GLOBAL_DETERMINISTIC: "allow_global_deterministic",
-}
-
 # Conditions that use the rewrite mechanism (async model calls).
 _REWRITE_CONDITIONS = frozenset({
     Condition.LOCAL_REWRITE,
@@ -45,7 +37,6 @@ _REWRITE_CONDITIONS = frozenset({
 
 # Conditions that require no dataset transformation.
 _PASSTHROUGH_CONDITIONS = frozenset({
-    Condition.BASELINE,
     Condition.PROBE_ONLY,
 })
 
@@ -84,7 +75,7 @@ def _resolve_scope(
         return indices, []
 
     if condition == Condition.GLOBAL_DETERMINISTIC:
-        protected = set(profile.rewrite_policy.protected_roles)
+        protected = set(profile.intervention_constraints.protected_roles)
         full_indices = [
             i for i, m in enumerate(messages) if m.role not in protected
         ]
@@ -105,9 +96,10 @@ async def apply_intervention(
 ) -> list[Sample]:
     """Apply an intervention to a list of samples.
 
-    Validates the condition against the profile's rewrite policy, transforms
-    each sample, runs structural validation, and optionally runs the semantic
-    guard. Returns only samples that pass both validation phases.
+    Validates the condition against the profile's allowed_conditions,
+    transforms each sample, runs structural validation, and optionally
+    runs the semantic guard. Returns only samples that pass both
+    validation phases.
 
     Args:
         samples: Original samples (not modified).
@@ -120,20 +112,17 @@ async def apply_intervention(
         List of (possibly modified) samples that passed validation.
 
     Raises:
-        ValueError: If the condition is not permitted by the rewrite policy.
+        ValueError: If the condition is not in the profile's
+            allowed_conditions.
     """
+    if condition not in profile.allowed_conditions:
+        raise ValueError(
+            f"Condition {condition} is not in profile.allowed_conditions "
+            f"({[c.value for c in profile.allowed_conditions]})"
+        )
+
     if condition in _PASSTHROUGH_CONDITIONS:
         return list(samples)
-
-    # Validate condition against policy
-    policy_attr = _CONDITION_POLICY_MAP.get(condition)
-    if policy_attr is None:
-        raise ValueError(f"Unknown condition: {condition}")
-    if not getattr(profile.rewrite_policy, policy_attr):
-        raise ValueError(
-            f"Condition {condition} is not allowed by the rewrite policy "
-            f"({policy_attr}=False)"
-        )
 
     is_rewrite = condition in _REWRITE_CONDITIONS
     passed_samples: list[Sample] = []
@@ -151,7 +140,7 @@ async def apply_intervention(
             modified = await rewrite_intervention(
                 sample,
                 indices,
-                profile.rewrite_policy,
+                profile.intervention_constraints,
                 rewriter_model=rewriter_model,
                 cache_dir=cache_dir,
             )
@@ -159,13 +148,13 @@ async def apply_intervention(
             modified = deterministic_intervention(
                 sample,
                 indices,
-                profile.rewrite_policy,
+                profile.intervention_constraints,
                 provenance_only_indices=provenance_only_indices,
             )
 
         # Phase 1: structural validation
         valid, violations = validate_intervention(
-            sample, modified, indices, profile.rewrite_policy
+            sample, modified, indices, profile.intervention_constraints
         )
         if not valid:
             logger.info(

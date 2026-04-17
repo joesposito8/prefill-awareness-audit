@@ -13,7 +13,7 @@ from inspect_ai.solver import TaskState
 from prefill_awareness_audit import (
     AuditProfile,
     Condition,
-    RewritePolicy,
+    InterventionConstraints,
     make_audit_task,
 )
 from prefill_awareness_audit.data import PROBE_ONLY_PROFILE, all_assistant_turns
@@ -56,11 +56,10 @@ def _make_profile(
             sample_id=s.id or "", message_indices=[1], target_kind="single_turn"
         ),
         allowed_conditions=allowed_conditions or [
-            Condition.BASELINE,
             Condition.PROBE_ONLY,
             Condition.LOCAL_DETERMINISTIC,
         ],
-        rewrite_policy=RewritePolicy(),
+        intervention_constraints=InterventionConstraints(),
     )
 
 
@@ -96,9 +95,9 @@ def test_make_audit_task_condition_enum() -> None:
     ds = _make_dataset()
     profile = _make_profile()
     task = make_audit_task(
-        data=ds, condition=Condition.BASELINE, profile=profile, scorer=_mock_scorer()
+        data=ds, condition=Condition.PROBE_ONLY, profile=profile, scorer=_mock_scorer()
     )
-    assert task.metadata["condition"] == "BASELINE"
+    assert task.metadata["condition"] == "PROBE_ONLY"
 
 
 def test_make_audit_task_condition_string() -> None:
@@ -106,9 +105,9 @@ def test_make_audit_task_condition_string() -> None:
     ds = _make_dataset()
     profile = _make_profile()
     task = make_audit_task(
-        data=ds, condition="BASELINE", profile=profile, scorer=_mock_scorer()
+        data=ds, condition="PROBE_ONLY", profile=profile, scorer=_mock_scorer()
     )
-    assert task.metadata["condition"] == "BASELINE"
+    assert task.metadata["condition"] == "PROBE_ONLY"
 
 
 def test_make_audit_task_default_profile() -> None:
@@ -150,7 +149,7 @@ def test_make_audit_task_limit() -> None:
 def test_make_audit_task_disallowed_condition() -> None:
     """Raises ValueError for a condition not in allowed_conditions."""
     ds = _make_dataset()
-    profile = _make_profile(allowed_conditions=[Condition.BASELINE, Condition.PROBE_ONLY])
+    profile = _make_profile(allowed_conditions=[Condition.PROBE_ONLY])
     with pytest.raises(ValueError, match="not in profile.allowed_conditions"):
         make_audit_task(
             data=ds,
@@ -188,21 +187,6 @@ def test_make_audit_task_intervention_condition(mock_intervention: AsyncMock) ->
     assert len(result_samples) == 3
 
 
-def test_make_audit_task_baseline_no_probes() -> None:
-    """BASELINE condition does not append probes."""
-    ds = _make_dataset()
-    profile = _make_profile()
-    task = make_audit_task(
-        data=ds,
-        condition="BASELINE",
-        profile=profile,
-        solver=[lambda s, g: s],
-        scorer=_mock_scorer(),
-    )
-    # Only the original solver, no probes
-    assert len(task.solver) == 1
-
-
 def test_make_audit_task_probe_only_appends_probes() -> None:
     """PROBE_ONLY appends forked_probes to solver chain."""
     ds = _make_dataset()
@@ -216,3 +200,86 @@ def test_make_audit_task_probe_only_appends_probes() -> None:
     )
     # Original solver + forked_probes
     assert len(task.solver) == 2
+
+
+def test_make_audit_task_custom_probes_override() -> None:
+    """Passing probes=[...] replaces the default probe list in the forked_probes."""
+    from prefill_awareness_audit.probes import awareness_probe, forked_probes
+
+    ds = _make_dataset()
+    custom_probe = awareness_probe()
+    task = make_audit_task(
+        data=ds,
+        condition="PROBE_ONLY",
+        profile=_make_profile(),
+        scorer=_mock_scorer(),
+        probes=[custom_probe],
+    )
+    # Task metadata should indicate a custom probe list was used
+    assert task.metadata["custom_probes"] is True
+
+
+def test_make_audit_task_default_probes_flag() -> None:
+    """Default probes flag is False when probes= is not passed."""
+    task = make_audit_task(
+        data=_make_dataset(),
+        condition="PROBE_ONLY",
+        profile=_make_profile(),
+        scorer=_mock_scorer(),
+    )
+    assert task.metadata["custom_probes"] is False
+
+
+def test_continuation_audit_wires_generate_and_continuation_prompt() -> None:
+    """continuation_audit() uses a generate() solver and CONTINUATION_AWARENESS_QUESTION."""
+    from prefill_awareness_audit import continuation_audit
+    from prefill_awareness_audit.probes.prompts import CONTINUATION_AWARENESS_QUESTION
+
+    ds = _make_dataset()
+    task = continuation_audit(
+        data=ds,
+        condition="PROBE_ONLY",
+        profile=_make_profile(),
+        scorer=_mock_scorer(),
+    )
+
+    # One solver from continuation_audit (generate) + forked_probes wrapper
+    assert len(task.solver) == 2
+    # Custom probes flag should be set because continuation_audit passes its own
+    assert task.metadata["custom_probes"] is True
+
+
+def test_continuation_audit_with_tools_adds_use_tools() -> None:
+    """continuation_audit(tools=...) inserts use_tools() before generate()."""
+    from inspect_ai.tool import ToolDef
+
+    from prefill_awareness_audit import continuation_audit
+
+    async def _stub(**kwargs):
+        return ""
+
+    stub_tool = ToolDef(tool=_stub, name="stub", description="x", parameters={}).as_tool()
+
+    task = continuation_audit(
+        data=_make_dataset(),
+        tools=[stub_tool],
+        condition="PROBE_ONLY",
+        profile=_make_profile(),
+        scorer=_mock_scorer(),
+    )
+    # use_tools + generate + forked_probes wrapper
+    assert len(task.solver) == 3
+
+
+def test_default_prompt_is_cold_replay_variant() -> None:
+    """DEFAULT_AWARENESS_QUESTION does not include the "Before your last message" intro."""
+    from prefill_awareness_audit import (
+        CONTINUATION_AWARENESS_QUESTION,
+        DEFAULT_AWARENESS_QUESTION,
+    )
+
+    assert "before your last message" not in DEFAULT_AWARENESS_QUESTION.lower()
+    assert "before your last message" in CONTINUATION_AWARENESS_QUESTION.lower()
+    # Both use the same "ANSWER: me / not me" format
+    assert 'ANSWER: me' in DEFAULT_AWARENESS_QUESTION
+    assert 'ANSWER: me' in CONTINUATION_AWARENESS_QUESTION

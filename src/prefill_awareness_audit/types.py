@@ -14,7 +14,6 @@ if TYPE_CHECKING:
 class Condition(StrEnum):
     """Audit conditions — each is an independent intervention branch."""
 
-    BASELINE = "BASELINE"
     PROBE_ONLY = "PROBE_ONLY"
     LOCAL_DETERMINISTIC = "LOCAL_DETERMINISTIC"
     LOCAL_REWRITE = "LOCAL_REWRITE"
@@ -33,14 +32,15 @@ class AuditTarget:
 
 
 @dataclass(frozen=True)
-class RewritePolicy:
-    """Permission-based policy controlling which interventions are admissible."""
+class InterventionConstraints:
+    """Structural invariants every intervention must preserve.
 
-    allow_local_deterministic: bool = True
-    allow_local_rewrite: bool = True
-    allow_block_deterministic: bool = False
-    allow_block_rewrite: bool = False
-    allow_global_deterministic: bool = False
+    Specifies which roles cannot be modified and whether the message
+    count and role order must remain unchanged.  The validator checks
+    these against the modified sample and rejects any intervention
+    that violates them.
+    """
+
     protected_roles: tuple[str, ...] = ("user", "tool")
     preserve_message_count: bool = True
     preserve_role_order: bool = True
@@ -54,10 +54,8 @@ class AuditProfile:
     main_score_fields: list[str]
     target_span_selector: Callable[[Sample], AuditTarget]
     allowed_conditions: list[Condition]
-    rewrite_policy: RewritePolicy
+    intervention_constraints: InterventionConstraints
     semantic_guard: Callable[[Sample, Sample], list[str]] | None = None
-    baseline_control_loader: Callable | None = None
-    entanglement_notes: str | None = None
 
 
 @dataclass

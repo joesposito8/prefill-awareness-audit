@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from inspect_ai.dataset import Sample
     from inspect_ai.model import Model
 
-    from prefill_awareness_audit.types import RewritePolicy
+    from prefill_awareness_audit.types import InterventionConstraints
 
 logger = logging.getLogger(__name__)
 
@@ -179,7 +179,7 @@ async def _rewrite_single_message(
 async def rewrite_intervention(
     sample: Sample,
     indices: list[int],
-    policy: RewritePolicy,
+    constraints: InterventionConstraints,
     rewriter_model: str = DEFAULT_REWRITER_MODEL,
     cache_dir: Path | None = None,
 ) -> Sample:
@@ -188,7 +188,7 @@ async def rewrite_intervention(
     Args:
         sample: Original sample (not modified).
         indices: Message indices to rewrite.
-        policy: Controls which roles are protected.
+        constraints: Specifies which roles are protected from modification.
         rewriter_model: Inspect AI model string for the rewriter.
         cache_dir: Directory for disk caches. Defaults to ``.paa_cache``.
 
@@ -233,7 +233,7 @@ async def rewrite_intervention(
         if idx >= len(messages):
             continue
         msg = messages[idx]
-        if msg.role in policy.protected_roles:
+        if msg.role in constraints.protected_roles:
             continue
 
         original_text = msg.text

@@ -10,149 +10,16 @@ from pathlib import Path
 from inspect_ai import Task
 from inspect_ai.dataset import Dataset, MemoryDataset, json_dataset
 from inspect_ai.scorer import Score, Scorer, Target, scorer
-from inspect_ai.solver import Solver, TaskState, generate
+from inspect_ai.solver import Solver, TaskState, generate, use_tools
+from inspect_ai.tool import Tool
 
 from .interventions import apply_intervention
-from .probes import awareness_probe, counterfactual_probe, diagnostic_probe, forked_probes
+from .probes import awareness_probe, diagnostic_probe, forked_probes, latent_probe
+from .probes.prompts import CONTINUATION_AWARENESS_QUESTION
 from .scoring import audit_scorer
 from .types import AuditProfile, Condition
 
-_NO_INTERVENTION = frozenset({Condition.BASELINE, Condition.PROBE_ONLY})
-
-
-def build_audit_task(
-    dataset: Dataset,
-    solver: list[Solver],
-    scorer: Scorer,
-    condition: Condition,
-    profile: AuditProfile,
-) -> Task:
-    """Build an Inspect Task for a given audit condition (sync).
-
-    This is the sync core of task construction.  The caller is responsible
-    for applying interventions to the dataset before calling this function
-    (use :func:`apply_intervention` for intervention conditions).
-
-    For ``BASELINE`` and ``PROBE_ONLY`` the dataset can be passed through
-    unmodified.
-
-    Args:
-        dataset: The benchmark dataset (already intervention-modified if needed).
-        solver: The benchmark's solver chain (should end with generate()).
-        scorer: The benchmark's scorer (will be wrapped by audit_scorer).
-        condition: Which audit condition to run.
-        profile: Benchmark-specific audit configuration.
-
-    Returns:
-        A configured Inspect Task ready for eval().
-
-    Raises:
-        ValueError: If the condition is not in the profile's allowed_conditions.
-    """
-    if condition not in profile.allowed_conditions:
-        raise ValueError(
-            f"Condition {condition} is not in profile.allowed_conditions "
-            f"({[c.value for c in profile.allowed_conditions]})"
-        )
-
-    # Append probes for all non-baseline conditions
-    if condition == Condition.BASELINE:
-        task_solver = list(solver)
-    else:
-        task_solver = list(solver) + [
-            forked_probes([
-                awareness_probe(),
-                counterfactual_probe(),
-                diagnostic_probe(),
-            ])
-        ]
-
-    # Always wrap scorer for uniform output schema
-    task_scorer = audit_scorer(scorer, profile)
-
-    return Task(
-        dataset=dataset,
-        solver=task_solver,
-        scorer=task_scorer,
-        metadata={
-            "condition": condition.value,
-            "profile": profile.name,
-            "rewrite_policy": {
-                k: v
-                for k, v in asdict(profile.rewrite_policy).items()
-                if isinstance(v, bool)
-            },
-        },
-    )
-
-
-async def audit_task(
-    dataset: Dataset,
-    solver: list[Solver],
-    scorer: Scorer,
-    condition: Condition,
-    profile: AuditProfile,
-) -> Task:
-    """Build an Inspect Task that runs one audit condition.
-
-    Validates the condition against the profile, applies the appropriate
-    intervention to the dataset, appends probes after generate() for
-    non-baseline conditions, and wraps the scorer to capture both original
-    benchmark dimensions and awareness dimensions.
-
-    This is an async convenience wrapper around :func:`build_audit_task`
-    that also handles intervention application.
-
-    Args:
-        dataset: The benchmark dataset.
-        solver: The benchmark's solver chain (should end with generate()).
-        scorer: The benchmark's scorer (will be wrapped by audit_scorer).
-        condition: Which audit condition to run.
-        profile: Benchmark-specific audit configuration.
-
-    Returns:
-        A configured Inspect Task ready for eval().
-
-    Raises:
-        ValueError: If the condition is not in the profile's allowed_conditions.
-    """
-    # Apply intervention (modifies dataset for non-passthrough conditions)
-    if condition in _NO_INTERVENTION:
-        task_dataset: Dataset = dataset
-    else:
-        modified_samples = await apply_intervention(
-            list(dataset), condition, profile
-        )
-        task_dataset = MemoryDataset(
-            modified_samples, name=getattr(dataset, "name", None)
-        )
-
-    return build_audit_task(task_dataset, solver, scorer, condition, profile)
-
-
-async def audit_tasks(
-    dataset: Dataset,
-    solver: list[Solver],
-    scorer: Scorer,
-    profile: AuditProfile,
-) -> list[Task]:
-    """Build one Task per admissible condition for parallel execution.
-
-    Returns a list suitable for ``inspect eval(tasks, max_tasks=N)``.
-
-    Args:
-        dataset: The benchmark dataset.
-        solver: The benchmark's solver chain.
-        scorer: The benchmark's scorer.
-        profile: Benchmark-specific audit configuration.
-
-    Returns:
-        List of Tasks, one per condition in profile.allowed_conditions.
-    """
-    return [
-        await audit_task(dataset, solver, scorer, condition, profile)
-        for condition in profile.allowed_conditions
-    ]
+_NO_INTERVENTION = frozenset({Condition.PROBE_ONLY})
 
 
 def _noop_scorer() -> Scorer:
@@ -170,26 +37,31 @@ def _noop_scorer() -> Scorer:
 
 def make_audit_task(
     data: str | Path | Dataset,
-    condition: str | Condition,
+    condition: str | Condition = "PROBE_ONLY",
     profile: AuditProfile | None = None,
     scorer: Scorer | None = None,
     solver: list[Solver] | None = None,
+    probes: list[Solver] | None = None,
     limit: int | None = None,
     seed: int = 42,
 ) -> Task:
     """Build an Inspect Task for one audit condition.
 
-    This is the primary user-facing API.  It resolves defaults, handles
-    data loading, applies interventions (including the sync/async split),
-    and delegates to :func:`build_audit_task`.
+    This is the single entry point for constructing audit tasks.  It resolves
+    defaults, handles data loading, validates the condition, applies
+    interventions, appends probes, and wraps the scorer.
 
     Args:
         data: Dataset, path to a JSONL file, or an Inspect Dataset.
         condition: Audit condition name or enum value.
         profile: Benchmark-specific audit configuration.  Defaults to
-            ``PROBE_ONLY_PROFILE`` (BASELINE + PROBE_ONLY only).
+            ``PROBE_ONLY_PROFILE`` (PROBE_ONLY only).
         scorer: Benchmark scorer.  Defaults to a no-op scorer (probes only).
         solver: Benchmark solver chain.  Defaults to ``[generate()]``.
+        probes: Override the probe list appended after the solver chain.
+            Defaults to ``[awareness_probe(), latent_probe(), diagnostic_probe()]``.
+            Pass a custom list to replace any or all probes (e.g. for a
+            different awareness prompt).
         limit: Maximum number of samples.
         seed: Random seed (stored in task metadata).
 
@@ -212,6 +84,13 @@ def make_audit_task(
 
         profile = PROBE_ONLY_PROFILE
 
+    # Validate condition against profile
+    if cond not in profile.allowed_conditions:
+        raise ValueError(
+            f"Condition {cond} is not in profile.allowed_conditions "
+            f"({[c.value for c in profile.allowed_conditions]})"
+        )
+
     # Resolve data to a Dataset
     if isinstance(data, (str, Path)):
         dataset: Dataset = json_dataset(str(data))
@@ -227,10 +106,6 @@ def make_audit_task(
         samples = list(dataset)[:limit]
         dataset = MemoryDataset(samples, name=getattr(dataset, "name", None))
 
-    # Resolve solver and scorer
-    task_solver = list(solver) if solver is not None else [generate()]
-    task_scorer = scorer if scorer is not None else _noop_scorer()
-
     # Apply intervention for non-passthrough conditions
     if cond not in _NO_INTERVENTION:
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
@@ -240,4 +115,92 @@ def make_audit_task(
             ).result()
         dataset = MemoryDataset(modified, name=getattr(dataset, "name", None))
 
-    return build_audit_task(dataset, task_solver, task_scorer, cond, profile)
+    # Build solver chain: user solvers + forked probes
+    task_solver = list(solver) if solver is not None else [generate()]
+    task_probes = list(probes) if probes is not None else [
+        awareness_probe(),
+        latent_probe(),
+        diagnostic_probe(),
+    ]
+    task_solver.append(forked_probes(task_probes))
+
+    # Wrap scorer
+    task_scorer = scorer if scorer is not None else _noop_scorer()
+    task_scorer = audit_scorer(task_scorer, profile)
+
+    return Task(
+        dataset=dataset,
+        solver=task_solver,
+        scorer=task_scorer,
+        metadata={
+            "condition": cond.value,
+            "profile": profile.name,
+            "intervention_constraints": {
+                k: v
+                for k, v in asdict(profile.intervention_constraints).items()
+                if isinstance(v, bool)
+            },
+            "custom_probes": probes is not None,
+        },
+    )
+
+
+def continuation_audit(
+    data: str | Path | Dataset,
+    tools: list[Tool] | None = None,
+    scorer: Scorer | None = None,
+    condition: str | Condition = "PROBE_ONLY",
+    profile: AuditProfile | None = None,
+    limit: int | None = None,
+    seed: int = 42,
+) -> Task:
+    """Build an audit task where the model continues the conversation first.
+
+    The model generates its own next assistant turn from the end of each
+    sample's conversation, then the awareness probe asks about the
+    preceding assistant messages using wording anchored on "your last
+    message" (which now refers to the just-generated turn).
+
+    Use this when you want the model to be a live participant in the
+    session before being probed — for example, when auditing whether
+    it recognises prefilled messages as not its own during a continued
+    agent run.  For audits of archival transcripts without a fresh
+    continuation, use :func:`make_audit_task` instead.
+
+    Args:
+        data: Dataset, path to a JSONL file, or an Inspect Dataset.
+        tools: Tools to make available during the continuation. Typically
+            stub tools from the underlying benchmark so the model can
+            emit tool calls that look like it would have during the
+            original run. ``tool_calls="none"`` is used, so the tools
+            are not actually invoked.
+        scorer: Benchmark scorer (wrapped with audit dimensions).
+        condition: Audit condition name or enum value.
+        profile: Benchmark-specific audit configuration.
+        limit: Maximum number of samples.
+        seed: Random seed (stored in task metadata).
+
+    Returns:
+        A configured Inspect Task ready for ``inspect eval``.
+    """
+    solver_chain: list[Solver] = []
+    if tools:
+        solver_chain.append(use_tools(tools))
+    solver_chain.append(generate(tool_calls="none"))
+
+    continuation_probes: list[Solver] = [
+        awareness_probe(question_template=CONTINUATION_AWARENESS_QUESTION),
+        latent_probe(),
+        diagnostic_probe(),
+    ]
+
+    return make_audit_task(
+        data=data,
+        condition=condition,
+        profile=profile,
+        scorer=scorer,
+        solver=solver_chain,
+        probes=continuation_probes,
+        limit=limit,
+        seed=seed,
+    )

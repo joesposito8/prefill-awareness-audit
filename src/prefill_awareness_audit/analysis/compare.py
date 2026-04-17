@@ -44,7 +44,7 @@ def extract_condition_summary(log: EvalLog) -> ConditionSummary:
     if condition_str is None:
         raise ValueError(
             f"Log {log.eval.eval_id} has no 'condition' in metadata. "
-            "Was this produced by audit_task()?"
+            "Was this produced by make_audit_task()?"
         )
     condition = Condition(condition_str)
 
@@ -115,16 +115,16 @@ def compare_conditions(summaries: list[ConditionSummary]) -> ComparisonTable:
 # ---------------------------------------------------------------------------
 
 _KEY_METRICS = [
-    "attribution_self_rate",
-    "attribution_not_self_rate",
-    "attribution_uncertain_rate",
+    "recognition_rate",
+    "detection_rate",
+    "false_attribution_rate",
+    "g_mean",
+    "uncertain_rate",
     "confidence_mean",
-    "confidence_median",
     "spontaneous_rate",
-    "latent_awareness_mean",
+    "latent_prefill_rate",
+    "latent_eval_rate",
 ]
-
-_CI_SUFFIXES = ("_ci_lo", "_ci_hi")
 
 
 def format_comparison_table(table: ComparisonTable) -> str:
@@ -144,11 +144,22 @@ def format_comparison_table(table: ComparisonTable) -> str:
         )
         lines.append("")
 
-        # Attribution
-        _append_rate_line(lines, "  Attribution", m, "attribution_self_rate", "self")
-        _append_rate_line(lines, "             ", m, "attribution_not_self_rate", "not_self")
-        _append_rate_line(lines, "             ", m, "attribution_uncertain_rate", "uncertain")
-        _append_n(lines, m, "attribution_n_samples")
+        # Ground truth confusion matrix (TPR / TNR / FPR / FNR)
+        lines.append("  Ground truth")
+        _append_rate_line(lines, "    recognition", m, "recognition_rate", "")
+        _append_rate_line(lines, "    detection  ", m, "detection_rate", "")
+        _append_rate_line(lines, "    false attr ", m, "false_attribution_rate", "")
+        _append_rate_line(lines, "    miss       ", m, "miss_rate", "")
+        g_mean = m.get("g_mean", float("nan"))
+        lines.append(f"    g_mean     : {_fmt(g_mean)}")
+        _append_rate_line(lines, "    uncertain  ", m, "uncertain_rate", "")
+        n_classified = int(m.get("n_classified", 0))
+        n_samples = int(m.get("n_samples", 0))
+        n_parse_fail = int(m.get("n_parse_fail", 0))
+        lines.append(
+            f"    (n_classified={n_classified}, n_samples={n_samples}, "
+            f"parse_fail={n_parse_fail})"
+        )
 
         # Confidence
         _append_mean_line(lines, "  Confidence ", m, "confidence_mean", "confidence_median", "confidence_std")
@@ -158,9 +169,10 @@ def format_comparison_table(table: ComparisonTable) -> str:
         _append_rate_line(lines, "  Spontaneous", m, "spontaneous_rate", "rate")
         _append_n(lines, m, "spontaneous_n_samples")
 
-        # Latent
-        _append_mean_line(lines, "  Latent     ", m, "latent_awareness_mean", "latent_awareness_median", "latent_awareness_std")
-        _append_n(lines, m, "latent_awareness_n_samples")
+        # Latent (MCQ probe -- two independent binary signals)
+        _append_rate_line(lines, "  Latent prefill", m, "latent_prefill_rate", "")
+        _append_rate_line(lines, "  Latent eval   ", m, "latent_eval_rate", "")
+        _append_n(lines, m, "latent_n_samples")
 
         # Diagnostic tags
         lines.append("  Diagnostic  ", )

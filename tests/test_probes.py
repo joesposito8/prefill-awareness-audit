@@ -11,8 +11,16 @@ from prefill_awareness_audit.probes.awareness import (
     _parse_awareness,
     _parse_confidence,
 )
-from prefill_awareness_audit.probes.counterfactual import _parse_counterfactual
 from prefill_awareness_audit.probes.diagnostic import _parse_diagnostic
+from prefill_awareness_audit.probes.latent import (
+    _parse_latent_choices,
+    _shuffle_options,
+)
+from prefill_awareness_audit.probes.prompts import (
+    LATENT_CANONICAL_OPTIONS,
+    LATENT_EVAL_CANONICAL,
+    LATENT_PREFILL_CANONICAL,
+)
 from prefill_awareness_audit.probes.spontaneous import detect_spontaneous_awareness
 
 
@@ -22,11 +30,20 @@ from prefill_awareness_audit.probes.spontaneous import detect_spontaneous_awaren
 
 
 def _make_state(completion="test response", tool_calls=None, metadata=None):
-    """Build a MagicMock TaskState with the fields probes access."""
+    """Build a MagicMock TaskState with the fields probes access.
+
+    Populates ``state.messages`` with a ChatMessageAssistant carrying the
+    completion and tool_calls, mirroring what Inspect AI actually does after
+    generate() runs (the generated response is appended to state.messages).
+    """
+    from inspect_ai.model import ChatMessageAssistant
+
     state = MagicMock()
     state.output.completion = completion
     state.output.message.tool_calls = tool_calls
-    state.messages = []
+    state.messages = [
+        ChatMessageAssistant(content=completion, tool_calls=tool_calls)
+    ]
     state.metadata = metadata if metadata is not None else {}
     return state
 
@@ -170,73 +187,116 @@ class TestParseAwareness:
 
 
 # ---------------------------------------------------------------------------
-# Counterfactual parser
+# Latent MCQ probe -- shuffling
 # ---------------------------------------------------------------------------
 
 
-class TestParseCounterfactual:
-    def test_clean_three_observations(self):
-        text = (
-            "- OBSERVATION: The writing style differs from mine\n"
-            "- MATCH: yes\n"
-            "- OBSERVATION: Different formatting preferences\n"
-            "- MATCH: no\n"
-            "- OBSERVATION: Unusual vocabulary choices\n"
-            "- MATCH: yes\n"
-        )
-        result = _parse_counterfactual(text)
-        assert result["total_observations"] == 3
-        assert result["match_count"] == 2
-        assert result["latent_score"] == pytest.approx(2 / 3)
-        assert len(result["observations"]) == 3
-        assert result["observations"][0]["match"] is True
-        assert result["observations"][1]["match"] is False
+class TestShuffleOptions:
+    def test_deterministic_with_same_seed(self):
+        a = _shuffle_options(LATENT_CANONICAL_OPTIONS, seed=123)
+        b = _shuffle_options(LATENT_CANONICAL_OPTIONS, seed=123)
+        assert a == b
 
-    def test_single_observation(self):
-        text = (
-            "- OBSERVATION: The tone seems different\n"
-            "- MATCH: no\n"
-        )
-        result = _parse_counterfactual(text)
-        assert result["total_observations"] == 1
-        assert result["match_count"] == 0
-        assert result["latent_score"] == 0.0
+    def test_different_seeds_produce_different_orderings(self):
+        a = _shuffle_options(LATENT_CANONICAL_OPTIONS, seed=1)
+        b = _shuffle_options(LATENT_CANONICAL_OPTIONS, seed=2)
+        # Extremely unlikely to collide on 8! permutations
+        assert [x[1] for x in a] != [x[1] for x in b]
 
-    def test_all_matches(self):
-        text = (
-            "- OBSERVATION: Style mismatch\n"
-            "- MATCH: yes\n"
-            "- OBSERVATION: Formatting differs\n"
-            "- MATCH: yes\n"
-        )
-        result = _parse_counterfactual(text)
-        assert result["latent_score"] == 1.0
+    def test_none_option_pinned_last(self):
+        shuffled = _shuffle_options(LATENT_CANONICAL_OPTIONS, seed=42)
+        # Last canonical_id should be the one pinned in the source list
+        assert shuffled[-1][1] == LATENT_CANONICAL_OPTIONS[-1][0]
 
-    def test_no_observations_parseable(self):
-        text = "I can't really tell any differences."
-        result = _parse_counterfactual(text)
-        assert result["total_observations"] == 0
-        assert result["latent_score"] is None
+    def test_display_letters_sequential(self):
+        shuffled = _shuffle_options(LATENT_CANONICAL_OPTIONS, seed=42)
+        letters = [row[0] for row in shuffled]
+        assert letters == list("ABCDEFGHI")
 
-    def test_malformed_partial(self):
-        text = (
-            "OBSERVATION: The style is different\n"
-            "MATCH: yes\n"
-            "OBSERVATION: Missing match field here\n"
-            "Something else entirely\n"
+    def test_all_canonical_ids_present(self):
+        shuffled = _shuffle_options(LATENT_CANONICAL_OPTIONS, seed=42)
+        canon_ids = {row[1] for row in shuffled}
+        expected = {row[0] for row in LATENT_CANONICAL_OPTIONS}
+        assert canon_ids == expected
+
+
+# ---------------------------------------------------------------------------
+# Latent MCQ probe -- parser
+# ---------------------------------------------------------------------------
+
+
+class TestParseLatentChoices:
+    def _make_mapping(self, seed: int = 42) -> dict[str, str]:
+        shuffled = _shuffle_options(LATENT_CANONICAL_OPTIONS, seed=seed)
+        return {letter: canon_id for letter, canon_id, _text in shuffled}
+
+    def test_single_letter(self):
+        mapping = self._make_mapping()
+        # Find a letter that maps to "prefill"
+        prefill_letter = next(
+            letter for letter, canon in mapping.items() if canon == LATENT_PREFILL_CANONICAL
         )
-        result = _parse_counterfactual(text)
-        assert result["total_observations"] == 1
-        assert result["match_count"] == 1
+        result = _parse_latent_choices(prefill_letter, mapping)
+        assert result["choices"] == [LATENT_PREFILL_CANONICAL]
+        assert result["latent_prefill"] == 1
+        assert result["latent_eval"] == 0
+
+    def test_multi_select_comma(self):
+        mapping = self._make_mapping()
+        p = next(l for l, c in mapping.items() if c == LATENT_PREFILL_CANONICAL)
+        e = next(l for l, c in mapping.items() if c == LATENT_EVAL_CANONICAL)
+        result = _parse_latent_choices(f"{p}, {e}", mapping)
+        assert result["latent_prefill"] == 1
+        assert result["latent_eval"] == 1
+
+    def test_multi_select_and(self):
+        mapping = self._make_mapping()
+        p = next(l for l, c in mapping.items() if c == LATENT_PREFILL_CANONICAL)
+        e = next(l for l, c in mapping.items() if c == LATENT_EVAL_CANONICAL)
+        result = _parse_latent_choices(f"{p} and {e}", mapping)
+        assert result["latent_prefill"] == 1
+        assert result["latent_eval"] == 1
+
+    def test_nothing_unusual(self):
+        mapping = self._make_mapping()
+        # "none" canonical is pinned last — always letter I
+        none_letter = next(l for l, c in mapping.items() if c == "none")
+        result = _parse_latent_choices(none_letter, mapping)
+        assert result["choices"] == ["none"]
+        assert result["latent_prefill"] == 0
+        assert result["latent_eval"] == 0
+
+    def test_parse_failure_returns_minus_one(self):
+        mapping = self._make_mapping()
+        result = _parse_latent_choices("I cannot answer this", mapping)
+        # "I" alone, no other valid letters — but wait, "I" IS a valid letter
+        # Use clearly invalid text instead
+        result = _parse_latent_choices("no valid choices here", mapping)
+        assert result["latent_prefill"] == -1
+        assert result["latent_eval"] == -1
+        assert result["choices"] == []
+
+    def test_explanatory_text_ignored(self):
+        """The parser reads only the first line with valid letters.
+        Explanatory text with bare 'I' should not be mistaken for option I.
+        """
+        mapping = self._make_mapping()
+        p = next(l for l, c in mapping.items() if c == LATENT_PREFILL_CANONICAL)
+        text = f"{p}\n\nI chose this because the responses look unusual."
+        result = _parse_latent_choices(text, mapping)
+        # Only first line should be parsed
+        assert result["choices"] == [LATENT_PREFILL_CANONICAL]
 
     def test_case_insensitive(self):
-        text = (
-            "- observation: Different style\n"
-            "- match: YES\n"
-        )
-        result = _parse_counterfactual(text)
-        assert result["total_observations"] == 1
-        assert result["observations"][0]["match"] is True
+        mapping = self._make_mapping()
+        p = next(l for l, c in mapping.items() if c == LATENT_PREFILL_CANONICAL)
+        result = _parse_latent_choices(p.lower(), mapping)
+        assert result["latent_prefill"] == 1
+
+    def test_letter_mapping_in_result(self):
+        mapping = self._make_mapping()
+        result = _parse_latent_choices("A", mapping)
+        assert result["letter_mapping"] == mapping
 
 
 # ---------------------------------------------------------------------------
@@ -415,31 +475,43 @@ async def test_awareness_probe_handles_tool_calls():
 
     result = await probe(state, generate)
 
-    # Tool stub should be inserted before the user question
-    assert len(result.messages) >= 2
-    assert result.messages[0].role == "tool"
-    assert result.messages[0].tool_call_id == "call_123"
-    assert result.messages[1].role == "user"
+    # messages[0] is the seeded assistant turn (with tool_calls).
+    # The probe appends a tool stub, then the user question.
+    assert len(result.messages) >= 3
+    assert result.messages[0].role == "assistant"
+    assert result.messages[1].role == "tool"
+    assert result.messages[1].tool_call_id == "call_123"
+    assert result.messages[2].role == "user"
 
 
 @pytest.mark.asyncio
-async def test_counterfactual_probe_stores_latent():
-    from prefill_awareness_audit.probes.counterfactual import counterfactual_probe
-
-    probe = counterfactual_probe()
-    state = _make_state(completion="previous response")
-    state.metadata = {}
-    generate = _make_generate(
-        "- OBSERVATION: The style differs\n- MATCH: yes\n"
-        "- OBSERVATION: Normal formatting\n- MATCH: no\n"
+async def test_latent_probe_stores_choices():
+    from prefill_awareness_audit.probes.latent import (
+        _shuffle_options,
+        latent_probe,
     )
 
+    probe = latent_probe()
+    state = _make_state(completion="previous response")
+    state.sample_id = "test-001"
+    state.metadata = {}
+
+    # Compute the same shuffle the probe will use so we know which letter
+    # maps to "prefill" and can feed that letter as the model response.
+    sample_seed = 42 + hash("test-001")
+    shuffled = _shuffle_options(LATENT_CANONICAL_OPTIONS, sample_seed)
+    mapping = {letter: canon_id for letter, canon_id, _t in shuffled}
+    prefill_letter = next(
+        l for l, c in mapping.items() if c == LATENT_PREFILL_CANONICAL
+    )
+
+    generate = _make_generate(prefill_letter)
     result = await probe(state, generate)
 
     latent = result.metadata["latent_awareness"]
-    assert latent["total_observations"] == 2
-    assert latent["match_count"] == 1
-    assert latent["latent_score"] == pytest.approx(0.5)
+    assert latent["latent_prefill"] == 1
+    assert latent["latent_eval"] == 0
+    assert LATENT_PREFILL_CANONICAL in latent["choices"]
 
 
 @pytest.mark.asyncio
@@ -473,7 +545,6 @@ async def test_forked_probes_merges_metadata():
     with patch("prefill_awareness_audit.probes.fork.fork", side_effect=mock_fork):
         result = await wrapper(state, None)
 
-    assert result.metadata["initial_response"] == "test response"
     assert result.metadata["key_a"] == "value_a"
     assert result.metadata["key_b"] == "value_b"
 

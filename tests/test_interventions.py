@@ -28,7 +28,7 @@ from prefill_awareness_audit.interventions.validator import (
 from prefill_awareness_audit.types import (
     AuditTarget,
     Condition,
-    RewritePolicy,
+    InterventionConstraints,
 )
 
 
@@ -75,16 +75,8 @@ def _make_sample(
     return Sample(input=chat_messages, target="test", id=sample_id)
 
 
-def _default_policy() -> RewritePolicy:
-    return RewritePolicy()
-
-
-def _permissive_policy() -> RewritePolicy:
-    return RewritePolicy(
-        allow_block_deterministic=True,
-        allow_block_rewrite=True,
-        allow_global_deterministic=True,
-    )
+def _default_constraints() -> InterventionConstraints:
+    return InterventionConstraints()
 
 
 # ---------------------------------------------------------------------------
@@ -280,7 +272,7 @@ class TestDeterministicIntervention:
             ("user", "Question"),
             ("assistant", "Answer   \nhere"),
         ])
-        result = deterministic_intervention(sample, [1], _default_policy())
+        result = deterministic_intervention(sample, [1], _default_constraints())
         # Index 1 should be cleaned
         assert result.input[1].text == "Hi\nthere"
         # Index 3 should be untouched
@@ -292,7 +284,7 @@ class TestDeterministicIntervention:
             ("assistant", "Hi   "),
         ])
         # Even if user index is in indices, it should be skipped
-        result = deterministic_intervention(sample, [0, 1], _default_policy())
+        result = deterministic_intervention(sample, [0, 1], _default_constraints())
         assert result.input[0].text == "Hello   "  # user: protected
         assert result.input[1].text == "Hi"  # assistant: cleaned
 
@@ -302,7 +294,7 @@ class TestDeterministicIntervention:
             ("assistant", "Hi   \nthere"),
         ])
         original_text = sample.input[1].text
-        deterministic_intervention(sample, [1], _default_policy())
+        deterministic_intervention(sample, [1], _default_constraints())
         assert sample.input[1].text == original_text
 
     def test_out_of_range_index_ignored(self):
@@ -311,7 +303,7 @@ class TestDeterministicIntervention:
             ("assistant", "Hi"),
         ])
         # Should not raise
-        result = deterministic_intervention(sample, [5], _default_policy())
+        result = deterministic_intervention(sample, [5], _default_constraints())
         assert len(result.input) == 2
 
     def test_provenance_only_on_protected(self):
@@ -322,7 +314,7 @@ class TestDeterministicIntervention:
         result = deterministic_intervention(
             sample,
             [1],
-            _default_policy(),
+            _default_constraints(),
             provenance_only_indices=[0],
         )
         # User message: provenance stripped but whitespace preserved
@@ -333,7 +325,7 @@ class TestDeterministicIntervention:
 
     def test_str_input_returns_unmodified(self):
         sample = Sample(input="plain string", target="test", id="str-001")
-        result = deterministic_intervention(sample, [0], _default_policy())
+        result = deterministic_intervention(sample, [0], _default_constraints())
         assert result.input == "plain string"
 
 
@@ -367,7 +359,7 @@ class TestValidator:
         modified = original.model_copy(deep=True)
         modified.input[1].text = "Modified assistant message"
         passed, violations = validate_intervention(
-            original, modified, [1], _default_policy()
+            original, modified, [1], _default_constraints()
         )
         assert passed
         assert violations == []
@@ -377,7 +369,7 @@ class TestValidator:
         modified = original.model_copy(deep=True)
         modified.input.append(ChatMessageAssistant(content="extra"))
         passed, violations = validate_intervention(
-            original, modified, [1], _default_policy()
+            original, modified, [1], _default_constraints()
         )
         assert not passed
         assert any("count" in v.lower() for v in violations)
@@ -388,7 +380,7 @@ class TestValidator:
         # Swap roles by replacing messages
         modified.input[1] = ChatMessageUser(content="wrong role")
         passed, violations = validate_intervention(
-            original, modified, [1], _default_policy()
+            original, modified, [1], _default_constraints()
         )
         assert not passed
         assert any("role" in v.lower() for v in violations)
@@ -398,7 +390,7 @@ class TestValidator:
         modified = original.model_copy(deep=True)
         modified.input[0].text = "Modified user message"  # user is protected
         passed, violations = validate_intervention(
-            original, modified, [1], _default_policy()
+            original, modified, [1], _default_constraints()
         )
         assert not passed
         assert any("protected" in v.lower() for v in violations)
@@ -408,7 +400,7 @@ class TestValidator:
         modified = original.model_copy(deep=True)
         modified.input[3].text = "Modified non-target assistant"
         passed, violations = validate_intervention(
-            original, modified, [1], _default_policy()  # only index 1 is target
+            original, modified, [1], _default_constraints()  # only index 1 is target
         )
         assert not passed
         assert any("non-target" in v.lower() for v in violations)
@@ -423,7 +415,7 @@ class TestValidator:
         modified = original.model_copy(deep=True)
         modified.input[2].text = "Modified tool output"
         passed, violations = validate_intervention(
-            original, modified, [1], _default_policy()
+            original, modified, [1], _default_constraints()
         )
         assert not passed
         assert any("tool" in v.lower() for v in violations)
@@ -433,7 +425,7 @@ class TestValidator:
         modified = original.model_copy(deep=True)
         modified.input[1].text = "   "  # whitespace-only = empty
         passed, violations = validate_intervention(
-            original, modified, [1], _default_policy()
+            original, modified, [1], _default_constraints()
         )
         assert not passed
         assert any("empty" in v.lower() for v in violations)
@@ -445,29 +437,29 @@ class TestValidator:
         modified.input[1].text = ""  # empty
         modified.input[3].text = "Changed non-target"  # non-target
         passed, violations = validate_intervention(
-            original, modified, [1], _default_policy()
+            original, modified, [1], _default_constraints()
         )
         assert not passed
         assert len(violations) >= 3
 
     def test_preserve_message_count_false_skips_check(self):
-        policy = RewritePolicy(preserve_message_count=False)
+        constraints = InterventionConstraints(preserve_message_count=False)
         original = _make_sample()
         modified = original.model_copy(deep=True)
         modified.input.append(ChatMessageAssistant(content="extra"))
         passed, violations = validate_intervention(
-            original, modified, [1], policy
+            original, modified, [1], constraints
         )
         # Should not fail on message count (may fail on other checks)
         assert not any("count" in v.lower() for v in violations)
 
     def test_preserve_role_order_false_skips_check(self):
-        policy = RewritePolicy(preserve_role_order=False)
+        constraints = InterventionConstraints(preserve_role_order=False)
         original = _make_sample()
         modified = original.model_copy(deep=True)
         modified.input[1] = ChatMessageUser(content="wrong role")
         passed, violations = validate_intervention(
-            original, modified, [1], policy
+            original, modified, [1], constraints
         )
         # Should not fail on role order specifically
         assert not any("role order" in v.lower() for v in violations)
@@ -492,17 +484,8 @@ class TestResolveScope:
                 target_kind="single_turn",
             ),
             allowed_conditions=list(Condition),
-            rewrite_policy=_permissive_policy(),
+            intervention_constraints=_default_constraints(),
         )
-
-    def test_baseline_returns_empty(self):
-        from prefill_awareness_audit.interventions import _resolve_scope
-
-        sample = _make_sample()
-        profile = self._make_profile()
-        indices, prov = _resolve_scope(Condition.BASELINE, sample, profile)
-        assert indices == []
-        assert prov == []
 
     def test_probe_only_returns_empty(self):
         from prefill_awareness_audit.interventions import _resolve_scope
@@ -567,7 +550,12 @@ class TestResolveScope:
 
 
 class TestApplyIntervention:
-    def _make_profile(self, policy=None, semantic_guard=None):
+    def _make_profile(
+        self,
+        allowed_conditions=None,
+        constraints=None,
+        semantic_guard=None,
+    ):
         from prefill_awareness_audit.types import AuditProfile
 
         return AuditProfile(
@@ -578,33 +566,20 @@ class TestApplyIntervention:
                 message_indices=[1],
                 target_kind="single_turn",
             ),
-            allowed_conditions=list(Condition),
-            rewrite_policy=policy or _permissive_policy(),
+            allowed_conditions=allowed_conditions or list(Condition),
+            intervention_constraints=constraints or _default_constraints(),
             semantic_guard=semantic_guard,
         )
-
-    @pytest.mark.asyncio
-    async def test_baseline_returns_all_samples(self):
-        from prefill_awareness_audit.interventions import apply_intervention
-
-        samples = [_make_sample(), _make_sample(sample_id="test-002")]
-        result = await apply_intervention(
-            samples, Condition.BASELINE, self._make_profile()
-        )
-        assert len(result) == 2
 
     @pytest.mark.asyncio
     async def test_disallowed_condition_raises(self):
         from prefill_awareness_audit.interventions import apply_intervention
 
-        restrictive = RewritePolicy(
-            allow_local_deterministic=False,
-        )
-        with pytest.raises(ValueError, match="not allowed"):
+        with pytest.raises(ValueError, match="not in profile.allowed_conditions"):
             await apply_intervention(
                 [_make_sample()],
                 Condition.LOCAL_DETERMINISTIC,
-                self._make_profile(policy=restrictive),
+                self._make_profile(allowed_conditions=[Condition.PROBE_ONLY]),
             )
 
     @pytest.mark.asyncio
@@ -700,7 +675,7 @@ class TestRewriteIntervention:
             return_value=mock,
         ):
             result = await rewrite_intervention(
-                sample, [3], _default_policy(), cache_dir=tmp_path
+                sample, [3], _default_constraints(), cache_dir=tmp_path
             )
 
         assert result.input[3].text == "Rewritten target message"
@@ -740,7 +715,7 @@ class TestRewriteIntervention:
             return_value=mock,
         ):
             await rewrite_intervention(
-                sample, [3, 5], _default_policy(), cache_dir=tmp_path
+                sample, [3, 5], _default_constraints(), cache_dir=tmp_path
             )
 
         # 1 style card + 2 rewrites = 3 total calls (not 2 style cards + 2 rewrites)
@@ -778,13 +753,13 @@ class TestRewriteIntervention:
         ):
             # First run: 1 style card + 1 rewrite = 2 calls
             await rewrite_intervention(
-                sample, [3], _default_policy(), cache_dir=tmp_path
+                sample, [3], _default_constraints(), cache_dir=tmp_path
             )
             calls_after_first = call_count["n"]
 
             # Second run: should hit cache, 0 new calls
             await rewrite_intervention(
-                sample, [3], _default_policy(), cache_dir=tmp_path
+                sample, [3], _default_constraints(), cache_dir=tmp_path
             )
             calls_after_second = call_count["n"]
 
@@ -836,7 +811,7 @@ class TestRewriteIntervention:
             return_value=mock,
         ):
             result = await rewrite_intervention(
-                sample, [2, 3], _default_policy(), cache_dir=tmp_path
+                sample, [2, 3], _default_constraints(), cache_dir=tmp_path
             )
 
         # User message at index 2 should be unchanged (protected)

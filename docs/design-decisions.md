@@ -87,7 +87,7 @@ Plus BASELINE (no probes, no intervention) and PROBE_ONLY (probes, no interventi
 
 ### 2.3 AuditProfile as the single integration contract
 
-**Decision:** One dataclass (`types.py:49-60`) that benchmark authors fill in. Contains: name, main_score_fields, target_span_selector, allowed_conditions, rewrite_policy, optional semantic_guard and baseline_control_loader.
+**Decision:** One dataclass in `types.py` that benchmark authors fill in. Contains: name, main_score_fields, target_span_selector, allowed_conditions, intervention_constraints, and an optional semantic_guard.
 
 **Why:** Minimizes integration surface area. The `target_span_selector` callback decouples target span identification from intervention logic -- each benchmark knows where its prefilled content is. The optional `semantic_guard` allows benchmark-specific validation without the audit core needing to understand benchmark semantics.
 
@@ -376,8 +376,6 @@ Things where the code and git history don't reveal full rationale. These may be 
 7. **Misalignment-continuation target span:** The case study walks backward from the end of the transcript to find the latest contiguous assistant/tool block. Why backward? Why the latest block rather than all prefilled assistant turns?
 
 8. **Why not test with more models during development?** The format priming bug was model-specific (GPT-5.4). Were other models tested with the OBSERVATION/MATCH format before it was replaced?
-
-9. **entanglement_notes field:** Appears on AuditProfile but doesn't seem to be used anywhere in the codebase. Documentation-only, or intended for the classifier?
 
 ---
 

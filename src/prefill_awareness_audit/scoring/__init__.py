@@ -6,7 +6,7 @@ from .metrics import (
     confidence_stats,
     coupling_metrics,
     diagnostic_tag_rates,
-    latent_awareness_stats,
+    latent_mcq_rates,
     spontaneous_rate_metric,
 )
 
@@ -16,6 +16,6 @@ __all__ = [
     "confidence_stats",
     "coupling_metrics",
     "diagnostic_tag_rates",
-    "latent_awareness_stats",
+    "latent_mcq_rates",
     "spontaneous_rate_metric",
 ]

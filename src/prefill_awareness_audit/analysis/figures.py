@@ -13,17 +13,19 @@ from ..types import ComparisonTable
 def plot_awareness_by_condition(
     table: ComparisonTable, output_path: str | Path
 ) -> None:
-    """Grouped bar chart: self/not_self/uncertain rates per condition.
+    """Grouped bar chart: recognition/detection/false-attribution rates per condition.
 
-    Includes Wilson 95% CI error bars when available.
+    Recognition (TPR) is computed over authentic samples only; detection (TNR)
+    and false attribution (FPR) over non-authentic samples only. Includes
+    Wilson 95% CI error bars when available.
     """
     conditions = table.conditions
     labels = [s.condition.value for s in conditions]
     n = len(conditions)
 
-    self_rates = [s.metrics.get("attribution_self_rate", 0) for s in conditions]
-    not_self_rates = [s.metrics.get("attribution_not_self_rate", 0) for s in conditions]
-    uncertain_rates = [s.metrics.get("attribution_uncertain_rate", 0) for s in conditions]
+    recognition = [s.metrics.get("recognition_rate", 0) for s in conditions]
+    detection = [s.metrics.get("detection_rate", 0) for s in conditions]
+    false_attr = [s.metrics.get("false_attribution_rate", 0) for s in conditions]
 
     # Error bars from Wilson CI
     def _errs(key: str, rates: list[float]) -> list[list[float]]:
@@ -40,15 +42,15 @@ def plot_awareness_by_condition(
     width = 0.25
 
     fig, ax = plt.subplots(figsize=(max(8, n * 1.5), 5))
-    ax.bar(x - width, self_rates, width, label="self",
-           yerr=_errs("attribution_self_rate", self_rates), capsize=3)
-    ax.bar(x, not_self_rates, width, label="not_self",
-           yerr=_errs("attribution_not_self_rate", not_self_rates), capsize=3)
-    ax.bar(x + width, uncertain_rates, width, label="uncertain",
-           yerr=_errs("attribution_uncertain_rate", uncertain_rates), capsize=3)
+    ax.bar(x - width, recognition, width, label="recognition (TPR)",
+           yerr=_errs("recognition_rate", recognition), capsize=3)
+    ax.bar(x, detection, width, label="detection (TNR)",
+           yerr=_errs("detection_rate", detection), capsize=3)
+    ax.bar(x + width, false_attr, width, label="false attribution (FPR)",
+           yerr=_errs("false_attribution_rate", false_attr), capsize=3)
 
     ax.set_ylabel("Rate")
-    ax.set_title("Awareness Attribution by Condition")
+    ax.set_title("Awareness Ground-Truth Rates by Condition")
     ax.set_xticks(x)
     ax.set_xticklabels(labels, rotation=30, ha="right")
     ax.legend()
@@ -99,10 +101,14 @@ def plot_delta_heatmap(
         return
 
     key_metrics = [
-        "attribution_not_self_rate",
+        "recognition_rate",
+        "detection_rate",
+        "false_attribution_rate",
+        "g_mean",
         "confidence_mean",
         "spontaneous_rate",
-        "latent_awareness_mean",
+        "latent_prefill_rate",
+        "latent_eval_rate",
     ]
 
     cond_names = list(table.deltas_vs_probe_only.keys())
@@ -122,7 +128,7 @@ def plot_delta_heatmap(
     im = ax.imshow(arr, cmap="RdYlGn_r", aspect="auto")
 
     ax.set_xticks(range(len(key_metrics)))
-    ax.set_xticklabels([m.replace("attribution_", "").replace("_", "\n") for m in key_metrics],
+    ax.set_xticklabels([m.replace("_", "\n") for m in key_metrics],
                        rotation=30, ha="right")
     ax.set_yticks(range(len(cond_names)))
     ax.set_yticklabels(cond_names)

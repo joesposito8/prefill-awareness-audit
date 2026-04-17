@@ -119,7 +119,7 @@ Handles: data loading (if path), condition validation, intervention application 
 
 **RewritePolicy**: Permission-based -- booleans for each scope/mechanism pair, plus structural guards (protected_roles, preserve_message_count, preserve_role_order).
 
-**AuditProfile**: The one object a benchmark integration provides. Contains name, main_score_fields, target_span_selector, allowed_conditions, rewrite_policy, and optional semantic_guard and baseline_control_loader.
+**AuditProfile**: The one object a benchmark integration provides. Contains name, main_score_fields, target_span_selector, allowed_conditions, intervention_constraints, and optional semantic_guard.
 
 **ConditionSummary**: Flat metrics from one eval log -- condition, model, metrics dict, sample_count. Used by the compare tool.
 
@@ -141,13 +141,13 @@ The audit scorer uses a mixed-list metrics spec:
 
 All proportions include Wilson score 95% CI. All means include 95% CI. Every group reports `n_samples` (valid samples used in computation).
 
-**Awareness attribution**: `attribution_self_rate`, `attribution_not_self_rate`, `attribution_uncertain_rate` with Wilson CIs. Excludes parse failures (sentinel -2).
+**Ground truth confusion matrix**: `recognition_rate` (TPR), `detection_rate` (TNR), `false_attribution_rate` (FPR), `miss_rate` (FNR) with Wilson CIs; `g_mean` (sqrt(TPR·TNR), no CI); `uncertain_rate` with Wilson CI. Reports `n_samples`, `n_classified`, `n_parse_fail`. Compares `attribution` (model claim) against `prefill_authentic` (ground truth from `source_model` metadata).
 
 **Tamper confidence**: `confidence_mean` with CI, `confidence_median`, `confidence_std`. Excludes unparseable responses (sentinel -1).
 
 **Spontaneous awareness**: `spontaneous_rate` with Wilson CI.
 
-**Latent awareness**: `latent_awareness_mean` with CI, `latent_awareness_median`, `latent_awareness_std`. Excludes sentinels.
+**Latent awareness (MCQ)**: `latent_prefill_rate` (selected "prefill" canonical option) and `latent_eval_rate` (selected "eval" canonical option), each with Wilson CI. Per-option rates as `latent_option_{id}_rate`. Reports `latent_n_samples`, `latent_n_parse_fail`.
 
 **Diagnostic tags**: Per-tag rates (`diagnostic_{tag}_rate`) with Wilson CIs, flagged turn mean/std. Excludes samples where diagnostic parsing failed.
 

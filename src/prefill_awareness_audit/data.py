@@ -8,7 +8,7 @@ from pathlib import Path
 from inspect_ai.dataset import Sample, json_dataset
 from inspect_ai.log import EvalLog, list_eval_logs, read_eval_log
 
-from .types import AuditProfile, AuditTarget, Condition, RewritePolicy
+from .types import AuditProfile, AuditTarget, Condition, InterventionConstraints
 
 
 def load_conversations(path: str | Path) -> list[Sample]:
@@ -56,14 +56,10 @@ def find_eval_log(task: str, log_dir: str = "") -> str:
     """
     resolved_dir = log_dir or os.environ.get("INSPECT_LOG_DIR", "./logs")
 
-    def _task_filter(log: EvalLog) -> bool:
-        return log.eval.task == task
-
-    matches = list_eval_logs(resolved_dir, filter=_task_filter)
+    all_logs = list_eval_logs(resolved_dir)
+    matches = [info for info in all_logs if info.task == task]
 
     if not matches:
-        # List available tasks to help the user
-        all_logs = list_eval_logs(resolved_dir)
         available = sorted({info.task for info in all_logs})
         if available:
             task_list = ", ".join(available)
@@ -86,9 +82,12 @@ def load_from_eval_log(
 ) -> tuple[list[Sample], str | None]:
     """Read conversation samples from an Inspect eval log.
 
-    Extracts the input messages from each sample in the log and converts
-    them into Inspect ``Sample`` objects suitable for re-evaluation.
-    Original benchmark scores are preserved in ``sample.metadata``.
+    Extracts the full conversation trace (``messages``) from each sample
+    in the log and converts them into Inspect ``Sample`` objects suitable
+    for auditing.  Uses ``messages`` rather than ``input`` because
+    ``input`` is the original task prompt while ``messages`` is the
+    actual conversation that occurred during execution.  Original
+    benchmark scores are preserved in ``sample.metadata``.
 
     Args:
         log_file: Path to an ``.eval`` or ``.json`` log file.
@@ -111,14 +110,14 @@ def load_from_eval_log(
         return samples, model_id
 
     for s in log.samples:
-        if isinstance(s.input, str):
-            raise TypeError(
-                f"Sample '{s.id}' has a plain-string input. "
-                f"The audit requires chat-message inputs (list of ChatMessage)."
+        if not s.messages:
+            raise ValueError(
+                f"Sample '{s.id}' has no messages in the log. "
+                f"The audit requires a conversation trace."
             )
         samples.append(
             Sample(
-                input=s.input,
+                input=s.messages,
                 id=str(s.id) if s.id is not None else None,
                 metadata={"original_scores": s.scores, "source_model": model_id},
             )
@@ -154,14 +153,55 @@ def all_assistant_turns(sample: Sample) -> AuditTarget:
     )
 
 
+def latest_assistant_block(sample: Sample) -> AuditTarget:
+    """Target span selector for the latest contiguous assistant/tool block.
+
+    Walks backwards from the end of the conversation, skipping any trailing
+    user/tool/system messages, then collects the run of assistant and tool
+    messages that precedes them. Useful for agent trajectories where the
+    relevant "action" is the most recent assistant turn plus its tool calls.
+
+    Args:
+        sample: An Inspect AI Sample with a list of chat messages as input.
+
+    Returns:
+        AuditTarget with indices of the latest contiguous assistant/tool block.
+    """
+    messages = sample.input
+    if not isinstance(messages, list):
+        return AuditTarget(
+            sample_id=sample.id or "", message_indices=[], target_kind="assistant_block"
+        )
+
+    n = len(messages)
+    i = n - 1
+
+    # Skip trailing user/tool/system messages (the continuation point).
+    while i >= 0 and messages[i].role in ("user", "tool", "system"):
+        i -= 1
+
+    # Collect the contiguous assistant/tool block going backwards.
+    indices: list[int] = []
+    while i >= 0 and messages[i].role in ("assistant", "tool"):
+        indices.append(i)
+        i -= 1
+
+    indices.reverse()
+    return AuditTarget(
+        sample_id=sample.id or "",
+        message_indices=indices,
+        target_kind="assistant_block",
+    )
+
+
 PROBE_ONLY_PROFILE = AuditProfile(
     name="probe-only",
     main_score_fields=[],
     target_span_selector=all_assistant_turns,
-    allowed_conditions=[Condition.BASELINE, Condition.PROBE_ONLY],
-    rewrite_policy=RewritePolicy(),
+    allowed_conditions=[Condition.PROBE_ONLY],
+    intervention_constraints=InterventionConstraints(),
 )
-"""Conservative profile — BASELINE and PROBE_ONLY only.
+"""Conservative profile — PROBE_ONLY only.
 
 Intervention conditions (LOCAL_DETERMINISTIC, LOCAL_REWRITE, etc.) require
 a benchmark-specific AuditProfile with an appropriate target_span_selector
