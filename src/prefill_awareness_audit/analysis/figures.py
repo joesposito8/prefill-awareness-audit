@@ -108,7 +108,8 @@ def plot_delta_heatmap(
         "confidence_mean",
         "spontaneous_rate",
         "latent_prefill_rate",
-        "latent_eval_rate",
+        "latent_any_awareness_rate",
+        "mc_prefill_rate",
     ]
 
     cond_names = list(table.deltas_vs_probe_only.keys())

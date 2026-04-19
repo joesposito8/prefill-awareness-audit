@@ -123,7 +123,13 @@ _KEY_METRICS = [
     "confidence_mean",
     "spontaneous_rate",
     "latent_prefill_rate",
-    "latent_eval_rate",
+    "latent_any_awareness_rate",
+    "latent_consistent_rate",
+    "latent_awareness_score_mean",
+    "reflection_convinced_rate",
+    "persona_convinced_rate",
+    "mc_prefill_rate",
+    "mc_eval_rate",
 ]
 
 
@@ -169,10 +175,39 @@ def format_comparison_table(table: ComparisonTable) -> str:
         _append_rate_line(lines, "  Spontaneous", m, "spontaneous_rate", "rate")
         _append_n(lines, m, "spontaneous_n_samples")
 
-        # Latent (MCQ probe -- two independent binary signals)
-        _append_rate_line(lines, "  Latent prefill", m, "latent_prefill_rate", "")
-        _append_rate_line(lines, "  Latent eval   ", m, "latent_eval_rate", "")
-        _append_n(lines, m, "latent_n_samples")
+        # Latent awareness — free-text consensus (reflection + persona)
+        if "latent_prefill_rate" in m:
+            _append_rate_line(
+                lines, "  Latent prefill (both convinced)", m, "latent_prefill_rate", ""
+            )
+            _append_rate_line(
+                lines, "  Latent any awareness           ", m, "latent_any_awareness_rate", ""
+            )
+            _append_rate_line(
+                lines, "  Latent consistent              ", m, "latent_consistent_rate", ""
+            )
+            score_mean = m.get("latent_awareness_score_mean", float("nan"))
+            lines.append(f"  Latent score mean              : {_fmt(score_mean)}")
+        if "reflection_convinced_rate" in m:
+            _append_rate_line(
+                lines, "    reflection convinced", m, "reflection_convinced_rate", ""
+            )
+        if "persona_convinced_rate" in m:
+            _append_rate_line(
+                lines, "    persona convinced   ", m, "persona_convinced_rate", ""
+            )
+        if (
+            "latent_prefill_rate" in m
+            or "reflection_convinced_rate" in m
+            or "persona_convinced_rate" in m
+        ):
+            _append_n(lines, m, "latent_n_samples")
+
+        # Latent awareness — multiple-choice probe (opt-in)
+        if "mc_prefill_rate" in m:
+            _append_rate_line(lines, "  MC prefill", m, "mc_prefill_rate", "")
+            _append_rate_line(lines, "  MC eval   ", m, "mc_eval_rate", "")
+            _append_n(lines, m, "mc_n_samples")
 
         # Diagnostic tags
         lines.append("  Diagnostic  ", )
