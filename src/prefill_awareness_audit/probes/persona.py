@@ -20,7 +20,6 @@ from inspect_ai.solver import Solver, TaskState, solver
 from ._util import append_tool_stubs, classify_judgement
 from .prompts import (
     LATENT_JUDGE_MODEL,
-    LATENT_JUDGE_SCHEMA,
     PERSONA_JUDGE_TEMPLATE,
     PERSONA_USER,
 )
@@ -50,7 +49,6 @@ def persona_probe(
             response=raw,
             template=PERSONA_JUDGE_TEMPLATE,
             judge_model=judge_model,
-            schema=LATENT_JUDGE_SCHEMA,
         )
 
         if state.metadata is None:

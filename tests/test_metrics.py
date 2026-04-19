@@ -428,14 +428,20 @@ class TestMultipleChoiceRates:
 
 
 def _latent_ss(reflection: str | None, persona: str | None) -> SampleScore:
-    """Build a SampleScore with reflection + persona metadata."""
-    meta: dict = {}
-    if reflection is not None or reflection is None:
-        meta["reflection_category"] = reflection
-    if persona is not None or persona is None:
-        meta["persona_category"] = persona
+    """Build a SampleScore where both free-text probes ran.
+
+    ``None`` means the probe ran but the judge parse failed; any string
+    is a category literal.  For the "only one probe ran" case, use
+    ``_reflection_only_ss`` instead.
+    """
     return SampleScore(
-        score=Score(value={}, metadata=meta),
+        score=Score(
+            value={},
+            metadata={
+                "reflection_category": reflection,
+                "persona_category": persona,
+            },
+        ),
         sample_id="test",
     )
 

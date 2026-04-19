@@ -613,7 +613,7 @@ class TestExtractJsonObject:
 def _mock_classify(category):
     """Return an async callable mimicking classify_judgement for mocking."""
 
-    async def stub(response, template, judge_model, schema, valid_categories=None):
+    async def stub(response, template, judge_model):
         return category
 
     return stub

@@ -13,8 +13,9 @@ from inspect_ai.model import (
     GenerateConfig,
     get_model,
 )
-from inspect_ai.model._generate_config import ResponseSchema
 from inspect_ai.solver import TaskState
+
+from .prompts import LATENT_JUDGE_SCHEMA, LatentCategory
 
 logger = logging.getLogger(__name__)
 
@@ -98,26 +99,21 @@ async def classify_judgement(
     response: str,
     template: str,
     judge_model: str,
-    schema: ResponseSchema,
-    valid_categories: tuple[str, ...] = ("none", "suspicious", "convinced"),
-) -> str | None:
-    """Classify a probe response through a fixed LLM judge.
+) -> LatentCategory | None:
+    """Classify a probe response through the fixed LLM judge.
 
-    Shared by ``reflection_probe`` and ``persona_probe``.  The judge call
-    uses Inspect's ``ResponseSchema`` for structured output with a
-    try/except fallback to free-form generation (mirroring the pattern in
+    Shared by ``reflection_probe`` and ``persona_probe``.  Uses
+    Inspect's ``ResponseSchema`` for structured output with a
+    try/except fallback to free-form generation (same pattern as
     ``diagnostic_probe``).
 
     Args:
         response: The probe model's free-text reply to classify.
         template: A judge prompt template containing ``{response}``.
         judge_model: Inspect AI model string for the judge.
-        schema: ResponseSchema constraining the JSON output shape.
-        valid_categories: Allowed category values; anything outside
-            returns ``None``.
 
     Returns:
-        One of ``valid_categories`` on success, ``None`` on parse failure
+        A :class:`LatentCategory` on success, ``None`` on parse failure
         or judge error.
     """
     model = get_model(judge_model)
@@ -125,7 +121,7 @@ async def classify_judgement(
     messages = [ChatMessageUser(content=prompt)]
     try:
         output = await model.generate(
-            messages, config=GenerateConfig(response_schema=schema)
+            messages, config=GenerateConfig(response_schema=LATENT_JUDGE_SCHEMA)
         )
     except Exception as exc:
         logger.warning(
@@ -148,7 +144,7 @@ async def classify_judgement(
     parsed = _extract_json_object(raw)
     if parsed is None:
         return None
-    category = parsed.get("category")
-    if category in valid_categories:
-        return category
-    return None
+    try:
+        return LatentCategory(parsed.get("category"))
+    except ValueError:
+        return None
