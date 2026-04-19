@@ -2,8 +2,21 @@
 
 from __future__ import annotations
 
-from inspect_ai.model import ChatMessage, ChatMessageAssistant, ChatMessageTool
+import json
+import logging
+
+from inspect_ai.model import (
+    ChatMessage,
+    ChatMessageAssistant,
+    ChatMessageTool,
+    ChatMessageUser,
+    GenerateConfig,
+    get_model,
+)
+from inspect_ai.model._generate_config import ResponseSchema
 from inspect_ai.solver import TaskState
+
+logger = logging.getLogger(__name__)
 
 
 def last_assistant_message(
@@ -42,3 +55,100 @@ def append_tool_stubs(state: TaskState) -> None:
                     function=tc.function,
                 )
             )
+
+
+def _extract_json_object(text: str) -> dict | None:
+    """Layered JSON extraction from model output.
+
+    Tries:
+    1. Strip markdown fences, direct json.loads().
+    2. Brace-balanced extraction of the first ``{...}`` object.
+
+    Returns the parsed object, or None if nothing parseable is found.
+    Mirrors the fallback ladder in ``diagnostic._parse_diagnostic`` so
+    judge parsers don't have to reinvent it.
+    """
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        lines = cleaned.split("\n")
+        lines = [ln for ln in lines[1:] if not ln.strip().startswith("```")]
+        cleaned = "\n".join(lines).strip()
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        pass
+    start = cleaned.find("{")
+    if start == -1:
+        return None
+    depth = 0
+    for i in range(start, len(cleaned)):
+        if cleaned[i] == "{":
+            depth += 1
+        elif cleaned[i] == "}":
+            depth -= 1
+            if depth == 0:
+                try:
+                    return json.loads(cleaned[start : i + 1])
+                except json.JSONDecodeError:
+                    return None
+    return None
+
+
+async def classify_judgement(
+    response: str,
+    template: str,
+    judge_model: str,
+    schema: ResponseSchema,
+    valid_categories: tuple[str, ...] = ("none", "suspicious", "convinced"),
+) -> str | None:
+    """Classify a probe response through a fixed LLM judge.
+
+    Shared by ``reflection_probe`` and ``persona_probe``.  The judge call
+    uses Inspect's ``ResponseSchema`` for structured output with a
+    try/except fallback to free-form generation (mirroring the pattern in
+    ``diagnostic_probe``).
+
+    Args:
+        response: The probe model's free-text reply to classify.
+        template: A judge prompt template containing ``{response}``.
+        judge_model: Inspect AI model string for the judge.
+        schema: ResponseSchema constraining the JSON output shape.
+        valid_categories: Allowed category values; anything outside
+            returns ``None``.
+
+    Returns:
+        One of ``valid_categories`` on success, ``None`` on parse failure
+        or judge error.
+    """
+    model = get_model(judge_model)
+    prompt = template.format(response=response)
+    messages = [ChatMessageUser(content=prompt)]
+    try:
+        output = await model.generate(
+            messages, config=GenerateConfig(response_schema=schema)
+        )
+    except Exception as exc:
+        logger.warning(
+            "classify_judgement: structured output call failed (%s: %s); "
+            "falling back to unstructured generation.",
+            type(exc).__name__,
+            exc,
+        )
+        try:
+            output = await model.generate(messages)
+        except Exception as exc2:
+            logger.warning(
+                "classify_judgement: unstructured fallback also failed (%s: %s)",
+                type(exc2).__name__,
+                exc2,
+            )
+            return None
+
+    raw = output.completion if output else ""
+    parsed = _extract_json_object(raw)
+    if parsed is None:
+        return None
+    category = parsed.get("category")
+    if category in valid_categories:
+        return category
+    return None
