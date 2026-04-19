@@ -231,10 +231,10 @@ def test_make_audit_task_default_probes_flag() -> None:
 
 
 def test_make_audit_task_probes_string_subset() -> None:
-    """probes='latent' resolves to a single latent_probe solver."""
+    """probes='multiple_choice' resolves to a single probe solver."""
     from prefill_awareness_audit.task_factory import _resolve_probes
 
-    resolved = _resolve_probes("latent")
+    resolved = _resolve_probes("multiple_choice")
     assert len(resolved) == 1
 
     task = make_audit_task(
@@ -242,21 +242,21 @@ def test_make_audit_task_probes_string_subset() -> None:
         condition="PROBE_ONLY",
         profile=_make_profile(),
         scorer=_mock_scorer(),
-        probes="latent",
+        probes="multiple_choice",
     )
     assert task.metadata["custom_probes"] is True
 
 
 def test_make_audit_task_probes_string_preserves_order() -> None:
     """Comma-separated names resolve in order."""
-    from prefill_awareness_audit.probes import awareness_probe, latent_probe
+    from prefill_awareness_audit.probes import awareness_probe, multiple_choice_probe
     from prefill_awareness_audit.task_factory import _resolve_probes
 
-    resolved = _resolve_probes("latent,awareness")
+    resolved = _resolve_probes("multiple_choice,awareness")
     assert len(resolved) == 2
     # Solvers are opaque closures; check the factory registry produced them in order
     # by instantiating again and comparing function identities on the registered factories.
-    assert type(resolved[0]).__name__ == type(latent_probe()).__name__
+    assert type(resolved[0]).__name__ == type(multiple_choice_probe()).__name__
     assert type(resolved[1]).__name__ == type(awareness_probe()).__name__
 
 
@@ -270,6 +270,14 @@ def test_make_audit_task_probes_string_unknown_name_raises() -> None:
             scorer=_mock_scorer(),
             probes="bogus",
         )
+
+
+def test_make_audit_task_probes_legacy_latent_name_now_errors() -> None:
+    """The old 'latent' name is no longer valid; use 'multiple_choice' instead."""
+    from prefill_awareness_audit.task_factory import _resolve_probes
+
+    with pytest.raises(ValueError, match="Unknown probe name.*'latent'"):
+        _resolve_probes("latent")
 
 
 def test_make_audit_task_probes_empty_string_raises() -> None:
@@ -286,7 +294,7 @@ def test_make_audit_task_probes_string_whitespace_tolerated() -> None:
     """Whitespace around names is stripped."""
     from prefill_awareness_audit.task_factory import _resolve_probes
 
-    resolved = _resolve_probes(" awareness , latent ")
+    resolved = _resolve_probes(" awareness , multiple_choice ")
     assert len(resolved) == 2
 
 

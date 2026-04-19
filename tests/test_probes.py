@@ -12,7 +12,7 @@ from prefill_awareness_audit.probes.awareness import (
     _parse_confidence,
 )
 from prefill_awareness_audit.probes.diagnostic import _parse_diagnostic
-from prefill_awareness_audit.probes.latent import (
+from prefill_awareness_audit.probes.multiple_choice import (
     _parse_latent_choices,
     _shuffle_options,
 )
@@ -485,13 +485,13 @@ async def test_awareness_probe_handles_tool_calls():
 
 
 @pytest.mark.asyncio
-async def test_latent_probe_stores_choices():
-    from prefill_awareness_audit.probes.latent import (
+async def test_multiple_choice_probe_stores_choices():
+    from prefill_awareness_audit.probes.multiple_choice import (
         _shuffle_options,
-        latent_probe,
+        multiple_choice_probe,
     )
 
-    probe = latent_probe()
+    probe = multiple_choice_probe()
     state = _make_state(completion="previous response")
     state.sample_id = "test-001"
     state.metadata = {}
@@ -508,10 +508,10 @@ async def test_latent_probe_stores_choices():
     generate = _make_generate(prefill_letter)
     result = await probe(state, generate)
 
-    latent = result.metadata["latent_awareness"]
-    assert latent["latent_prefill"] == 1
-    assert latent["latent_eval"] == 0
-    assert LATENT_PREFILL_CANONICAL in latent["choices"]
+    mc = result.metadata["multiple_choice"]
+    assert mc["latent_prefill"] == 1
+    assert mc["latent_eval"] == 0
+    assert LATENT_PREFILL_CANONICAL in mc["choices"]
 
 
 @pytest.mark.asyncio
@@ -565,3 +565,104 @@ async def test_diagnostic_probe_stores_parsed_json():
     assert result.metadata["diagnostic"]["turn"] == 3
     assert result.metadata["diagnostic"]["tags"] == ["style_mismatch"]
     assert result.metadata["diagnostic"]["parse_failed"] is False
+
+
+# ---------------------------------------------------------------------------
+# Judge JSON parser (_extract_json_object)
+# ---------------------------------------------------------------------------
+
+
+class TestExtractJsonObject:
+    def test_direct_parse(self):
+        from prefill_awareness_audit.probes._util import _extract_json_object
+
+        assert _extract_json_object('{"category": "convinced"}') == {
+            "category": "convinced"
+        }
+
+    def test_markdown_fences(self):
+        from prefill_awareness_audit.probes._util import _extract_json_object
+
+        assert _extract_json_object(
+            '```json\n{"category": "none"}\n```'
+        ) == {"category": "none"}
+
+    def test_surrounding_text(self):
+        from prefill_awareness_audit.probes._util import _extract_json_object
+
+        assert _extract_json_object(
+            'Here is my answer: {"category": "suspicious"} — done.'
+        ) == {"category": "suspicious"}
+
+    def test_no_braces(self):
+        from prefill_awareness_audit.probes._util import _extract_json_object
+
+        assert _extract_json_object("I think convinced") is None
+
+    def test_malformed(self):
+        from prefill_awareness_audit.probes._util import _extract_json_object
+
+        assert _extract_json_object('{"category": "convinced"') is None
+
+
+# ---------------------------------------------------------------------------
+# Reflection + persona probes
+# ---------------------------------------------------------------------------
+
+
+def _mock_classify(category):
+    """Return an async callable mimicking classify_judgement for mocking."""
+
+    async def stub(response, template, judge_model, schema, valid_categories=None):
+        return category
+
+    return stub
+
+
+@pytest.mark.asyncio
+async def test_reflection_probe_stores_category_and_raw():
+    from prefill_awareness_audit.probes import reflection
+
+    probe = reflection.reflection_probe()
+    state = _make_state(completion="Those messages feel unfamiliar to me.")
+    state.metadata = {}
+    generate = _make_generate("Those messages feel unfamiliar to me.")
+
+    with patch.object(reflection, "classify_judgement", _mock_classify("suspicious")):
+        result = await probe(state, generate)
+
+    assert result.metadata["reflection"]["category"] == "suspicious"
+    assert result.metadata["reflection"]["raw_response"] == (
+        "Those messages feel unfamiliar to me."
+    )
+
+
+@pytest.mark.asyncio
+async def test_reflection_probe_parse_failure_yields_none():
+    from prefill_awareness_audit.probes import reflection
+
+    probe = reflection.reflection_probe()
+    state = _make_state(completion="")
+    state.metadata = {}
+    generate = _make_generate("")
+
+    with patch.object(reflection, "classify_judgement", _mock_classify(None)):
+        result = await probe(state, generate)
+
+    assert result.metadata["reflection"]["category"] is None
+
+
+@pytest.mark.asyncio
+async def test_persona_probe_stores_category_and_raw():
+    from prefill_awareness_audit.probes import persona
+
+    probe = persona.persona_probe()
+    state = _make_state(completion="Wait, are you still you?")
+    state.metadata = {}
+    generate = _make_generate("Wait, are you still you?")
+
+    with patch.object(persona, "classify_judgement", _mock_classify("convinced")):
+        result = await probe(state, generate)
+
+    assert result.metadata["persona"]["category"] == "convinced"
+    assert result.metadata["persona"]["raw_response"] == "Wait, are you still you?"
