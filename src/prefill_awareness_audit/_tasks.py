@@ -36,7 +36,7 @@ def prefill_awareness_audit(
         inspect eval prefill_awareness_audit/prefill_awareness_audit -T data=conversations.jsonl \\
             --model anthropic/claude-sonnet-4-6
         inspect eval prefill_awareness_audit/prefill_awareness_audit -T task=my_benchmark \\
-            -T probes=awareness,latent
+            -T probes=awareness,reflection
 
     Args:
         task: Task name — discovers the most recent matching eval log.
@@ -45,8 +45,10 @@ def prefill_awareness_audit(
         data: Path to a JSONL file of conversations.
         condition: Audit condition name (PROBE_ONLY, etc.).
         probes: Comma-separated probe names to run — any subset of
-            ``awareness``, ``latent``, ``diagnostic``. Empty (default) runs
-            all three.
+            ``awareness``, ``reflection``, ``persona``, ``diagnostic``,
+            ``multiple_choice``. Empty (default) runs the first four;
+            ``multiple_choice`` is opt-in (the legacy MCQ probe, kept for
+            A/B comparison against the free-text probes).
         limit: Maximum number of samples.
         seed: Random seed.
     """

@@ -19,9 +19,13 @@ from .probes import (
     awareness_probe,
     diagnostic_probe,
     forked_probes,
-    latent_probe,
+    persona_probe,
+    reflection_probe,
 )
-from .probes.prompts import CONTINUATION_AWARENESS_QUESTION
+from .probes.prompts import (
+    CONTINUATION_AWARENESS_QUESTION,
+    REFLECTION_USER_CONTINUATION,
+)
 from .scoring import audit_scorer
 from .types import AuditProfile, Condition
 
@@ -84,13 +88,16 @@ def make_audit_task(
         scorer: Benchmark scorer.  Defaults to a no-op scorer (probes only).
         solver: Benchmark solver chain.  Defaults to ``[generate()]``.
         probes: Override the probe list appended after the solver chain.
-            Defaults to ``[awareness_probe(), latent_probe(), diagnostic_probe()]``.
+            Defaults to ``[awareness_probe(), reflection_probe(),
+            persona_probe(), diagnostic_probe()]`` — four probes.
             Accepts either a list of Solver instances (for programmatic use,
             e.g. a custom awareness prompt) or a comma-separated string of
             probe names drawn from :data:`prefill_awareness_audit.probes.PROBE_FACTORIES`
-            — currently ``"awareness"``, ``"latent"``, ``"diagnostic"``. The
-            string form is what the generic ``@task`` forwards from the CLI
-            ``-T probes=...`` flag.
+            — ``"awareness"``, ``"reflection"``, ``"persona"``,
+            ``"diagnostic"``, plus ``"multiple_choice"`` (opt-in, not in
+            the default set; an A/B baseline for the free-text probes).
+            The string form is what the generic ``@task`` forwards from
+            the CLI ``-T probes=...`` flag.
         limit: Maximum number of samples.
         seed: Random seed (stored in task metadata).
 
@@ -149,7 +156,12 @@ def make_audit_task(
     if probes is not None:
         task_probes = _resolve_probes(probes)
     else:
-        task_probes = [awareness_probe(), latent_probe(), diagnostic_probe()]
+        task_probes = [
+            awareness_probe(),
+            reflection_probe(),
+            persona_probe(),
+            diagnostic_probe(),
+        ]
     task_solver.append(forked_probes(task_probes))
 
     # Wrap scorer
@@ -218,7 +230,8 @@ def continuation_audit(
 
     continuation_probes: list[Solver] = [
         awareness_probe(question_template=CONTINUATION_AWARENESS_QUESTION),
-        latent_probe(),
+        reflection_probe(question_template=REFLECTION_USER_CONTINUATION),
+        persona_probe(),
         diagnostic_probe(),
     ]
 
