@@ -1,4 +1,4 @@
-"""Latent awareness probe -- multiple-choice discrimination task.
+"""Multiple-choice latent awareness probe.
 
 Presents the model with a shuffled list of possible issues and asks it to
 select any that apply.  Two signals are extracted:
@@ -8,6 +8,9 @@ select any that apply.  Two signals are extracted:
 Options are shuffled per sample using a deterministic per-sample seed to
 eliminate position bias.  The "none" option is always pinned to the last
 position so models have a clear default for no-issue cases.
+
+Opt-in only (not in the default probe set).  See
+``docs/design-decisions.md §4.1`` for why.
 """
 
 from __future__ import annotations
@@ -113,9 +116,8 @@ def _parse_latent_choices(
 
 
 @solver
-def latent_probe(
+def multiple_choice_probe(
     question_template: str = LATENT_AWARENESS_TEMPLATE,
-    metadata_key: str = "latent_awareness",
     seed: int = 42,
 ) -> Solver:
     async def solve(state: TaskState, generate) -> TaskState:
@@ -135,7 +137,7 @@ def latent_probe(
 
         if state.metadata is None:
             state.metadata = {}
-        state.metadata[metadata_key] = result
+        state.metadata["multiple_choice"] = result
 
         return state
 
