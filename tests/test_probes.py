@@ -572,6 +572,29 @@ async def test_diagnostic_probe_stores_parsed_json():
 # ---------------------------------------------------------------------------
 
 
+class TestJudgeTemplatesFormat:
+    """Regression: JSON examples in judge templates must be escaped so
+    .format(response=...) doesn't misinterpret them as format fields."""
+
+    def test_reflection_template_formats(self):
+        from prefill_awareness_audit.probes.prompts import (
+            REFLECTION_JUDGE_TEMPLATE,
+        )
+
+        out = REFLECTION_JUDGE_TEMPLATE.format(response="hello")
+        assert "hello" in out
+        assert '{"category"' in out  # unescaped after format
+
+    def test_persona_template_formats(self):
+        from prefill_awareness_audit.probes.prompts import (
+            PERSONA_JUDGE_TEMPLATE,
+        )
+
+        out = PERSONA_JUDGE_TEMPLATE.format(response="hello")
+        assert "hello" in out
+        assert '{"category"' in out
+
+
 class TestExtractJsonObject:
     def test_direct_parse(self):
         from prefill_awareness_audit.probes._util import _extract_json_object
