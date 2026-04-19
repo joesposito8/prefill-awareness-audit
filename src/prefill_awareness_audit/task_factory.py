@@ -14,7 +14,13 @@ from inspect_ai.solver import Solver, TaskState, generate, use_tools
 from inspect_ai.tool import Tool
 
 from .interventions import apply_intervention
-from .probes import awareness_probe, diagnostic_probe, forked_probes, latent_probe
+from .probes import (
+    PROBE_FACTORIES,
+    awareness_probe,
+    diagnostic_probe,
+    forked_probes,
+    latent_probe,
+)
 from .probes.prompts import CONTINUATION_AWARENESS_QUESTION
 from .scoring import audit_scorer
 from .types import AuditProfile, Condition
@@ -35,13 +41,32 @@ def _noop_scorer() -> Scorer:
     return _inner()
 
 
+def _resolve_probes(probes: list[Solver] | str) -> list[Solver]:
+    """Resolve a comma-separated name string to a list of probe solvers."""
+    if not isinstance(probes, str):
+        return list(probes)
+    names = [n.strip() for n in probes.split(",") if n.strip()]
+    if not names:
+        raise ValueError(
+            f"probes string is empty; pass None for defaults or one of "
+            f"{sorted(PROBE_FACTORIES)}"
+        )
+    unknown = [n for n in names if n not in PROBE_FACTORIES]
+    if unknown:
+        raise ValueError(
+            f"Unknown probe name(s) {unknown}; valid names are "
+            f"{sorted(PROBE_FACTORIES)}"
+        )
+    return [PROBE_FACTORIES[n]() for n in names]
+
+
 def make_audit_task(
     data: str | Path | Dataset,
     condition: str | Condition = "PROBE_ONLY",
     profile: AuditProfile | None = None,
     scorer: Scorer | None = None,
     solver: list[Solver] | None = None,
-    probes: list[Solver] | None = None,
+    probes: list[Solver] | str | None = None,
     limit: int | None = None,
     seed: int = 42,
 ) -> Task:
@@ -60,8 +85,12 @@ def make_audit_task(
         solver: Benchmark solver chain.  Defaults to ``[generate()]``.
         probes: Override the probe list appended after the solver chain.
             Defaults to ``[awareness_probe(), latent_probe(), diagnostic_probe()]``.
-            Pass a custom list to replace any or all probes (e.g. for a
-            different awareness prompt).
+            Accepts either a list of Solver instances (for programmatic use,
+            e.g. a custom awareness prompt) or a comma-separated string of
+            probe names drawn from :data:`prefill_awareness_audit.probes.PROBE_FACTORIES`
+            — currently ``"awareness"``, ``"latent"``, ``"diagnostic"``. The
+            string form is what the generic ``@task`` forwards from the CLI
+            ``-T probes=...`` flag.
         limit: Maximum number of samples.
         seed: Random seed (stored in task metadata).
 
@@ -117,11 +146,10 @@ def make_audit_task(
 
     # Build solver chain: user solvers + forked probes
     task_solver = list(solver) if solver is not None else [generate()]
-    task_probes = list(probes) if probes is not None else [
-        awareness_probe(),
-        latent_probe(),
-        diagnostic_probe(),
-    ]
+    if probes is not None:
+        task_probes = _resolve_probes(probes)
+    else:
+        task_probes = [awareness_probe(), latent_probe(), diagnostic_probe()]
     task_solver.append(forked_probes(task_probes))
 
     # Wrap scorer

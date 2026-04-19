@@ -16,6 +16,7 @@ def prefill_awareness_audit(
     log_dir: str = "",
     data: str = "",
     condition: str = "PROBE_ONLY",
+    probes: str = "",
     limit: int | None = None,
     seed: int = 42,
 ) -> Task:
@@ -34,6 +35,8 @@ def prefill_awareness_audit(
         inspect eval prefill_awareness_audit/prefill_awareness_audit -T log=logs/my_benchmark.eval
         inspect eval prefill_awareness_audit/prefill_awareness_audit -T data=conversations.jsonl \\
             --model anthropic/claude-sonnet-4-6
+        inspect eval prefill_awareness_audit/prefill_awareness_audit -T task=my_benchmark \\
+            -T probes=awareness,latent
 
     Args:
         task: Task name — discovers the most recent matching eval log.
@@ -41,6 +44,9 @@ def prefill_awareness_audit(
         log_dir: Log directory override (default: INSPECT_LOG_DIR or ./logs).
         data: Path to a JSONL file of conversations.
         condition: Audit condition name (PROBE_ONLY, etc.).
+        probes: Comma-separated probe names to run — any subset of
+            ``awareness``, ``latent``, ``diagnostic``. Empty (default) runs
+            all three.
         limit: Maximum number of samples.
         seed: Random seed.
     """
@@ -72,6 +78,7 @@ def prefill_awareness_audit(
             condition=condition,
             profile=PROBE_ONLY_PROFILE,
             solver=[],  # conversations already complete — skip generate()
+            probes=probes or None,
             seed=seed,
         )
 
@@ -80,6 +87,7 @@ def prefill_awareness_audit(
         data=data,
         condition=condition,
         profile=PROBE_ONLY_PROFILE,
+        probes=probes or None,
         limit=limit,
         seed=seed,
     )

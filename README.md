@@ -61,6 +61,15 @@ inspect eval prefill_awareness_audit/prefill_awareness_audit \
 
 Each JSONL record should be an Inspect AI Sample with `input` (list of chat messages) and optional `metadata.source_model` (defaults to `"unknown"` if absent).
 
+By default the audit runs all three probes (`awareness`, `latent`, `diagnostic`). Pass `-T probes=...` with any comma-separated subset to skip the ones you don't need — useful for faster or cheaper runs:
+
+```bash
+# Only the latent multiple-choice probe
+inspect eval prefill_awareness_audit/prefill_awareness_audit \
+    -T task=bfcl -T probes=latent \
+    --model anthropic/claude-sonnet-4-6
+```
+
 ### Path 2: "Is awareness confounding my eval?" (custom @task)
 
 When you need intervention conditions (LOCAL_DETERMINISTIC, LOCAL_REWRITE, etc.) and benchmark re-scoring, write a custom `@task` with `make_audit_task()`:
