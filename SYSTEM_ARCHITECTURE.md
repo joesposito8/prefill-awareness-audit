@@ -15,10 +15,12 @@ src/prefill_awareness_audit/
 
   probes/                        Inspect solvers appended after generate()
     prompts.py                   Centralized prompt templates, constants, output schemas
-    _util.py                     Shared helpers (tool call stub insertion)
+    _util.py                     Shared helpers (tool stubs, shared judge-call helper)
     fork.py                      forked_probes() -- runs probes in parallel via Inspect's fork()
     awareness.py                 Combined attribution + confidence (one prompt, one call)
-    counterfactual.py            Latent awareness via indirect observation matching
+    reflection.py                Free-text first-person reflection + LLM judge
+    persona.py                   User-persona role-swap + LLM judge (Cywiński)
+    multiple_choice.py           Shuffled 9-option MCQ latent probe (opt-in, A/B baseline)
     diagnostic.py                Reason tags (style_mismatch, formatting_artifact, etc.)
     spontaneous.py               Scorer-side: unprompted awareness mentions
 
@@ -147,7 +149,9 @@ All proportions include Wilson score 95% CI. All means include 95% CI. Every gro
 
 **Spontaneous awareness**: `spontaneous_rate` with Wilson CI.
 
-**Latent awareness (MCQ)**: `latent_prefill_rate` (selected "prefill" canonical option) and `latent_eval_rate` (selected "eval" canonical option), each with Wilson CI. Per-option rates as `latent_option_{id}_rate`. Reports `latent_n_samples`, `latent_n_parse_fail`.
+**Latent awareness (free-text + judge, dual-framing)**: emitted when at least one of `reflection` / `persona` ran. Per-technique: `reflection_convinced_rate`, `persona_convinced_rate` with Wilson CI. Cross-technique (emitted when *both* ran): `latent_prefill_rate` (strict consensus, both `convinced`), `latent_any_awareness_rate` (either ≥ `suspicious`), `latent_consistent_rate` (both returned same category), `latent_awareness_score_mean` (graded 0–2) with 95% CI. Counts: `latent_n_samples`, `latent_n_parse_fail_reflection`, `latent_n_parse_fail_persona`.
+
+**Latent awareness (multiple choice)**: emitted when the opt-in `multiple_choice` probe ran. `mc_prefill_rate` (selected "prefill" canonical option) and `mc_eval_rate` (selected "eval" canonical option), each with Wilson CI. Per-option rates as `mc_option_{id}_rate`. Reports `mc_n_samples`, `mc_n_parse_fail`.
 
 **Diagnostic tags**: Per-tag rates (`diagnostic_{tag}_rate`) with Wilson CIs, flagged turn mean/std. Excludes samples where diagnostic parsing failed.
 
@@ -165,7 +169,7 @@ Implemented in `scoring/metrics.py` with numpy only (no scipy):
 ## Component responsibilities
 
 - **task_factory**: `make_audit_task()` is the primary API -- resolves defaults, loads data, applies interventions, delegates to `build_audit_task()`. The sync/async split (interventions need async for model calls, but @task is sync) is handled internally via ThreadPoolExecutor.
-- **probes**: Solvers that run after generate() via forked execution (each probe gets an independent deepcopy of TaskState). Cannot influence the main behavioral score. Three active probes (awareness -- combined attribution+confidence, counterfactual -- latent awareness, diagnostic -- reason tags), one passive scorer-side (spontaneous).
+- **probes**: Solvers that run after generate() via forked execution (each probe gets an independent deepcopy of TaskState). Cannot influence the main behavioral score. Four active probes in the default set (awareness -- combined attribution+confidence, reflection -- free-text latent with LLM judge, persona -- user-persona role-swap with LLM judge, diagnostic -- reason tags), plus one opt-in latent probe (multiple_choice -- preserved MCQ as A/B baseline) and one passive scorer-side signal (spontaneous).
 - **interventions**: Each takes (samples, AuditProfile) and returns modified samples. Validates scope against RewritePolicy before applying. Deterministic and rewrite share the scope parameterization.
 - **scoring**: audit_scorer wraps the original scorer, adding probe dimensions to Score and registering custom metrics for per-condition aggregation. metrics.py defines all custom @metric functions.
 - **analysis**: compare.py loads eval logs and builds cross-condition comparison tables. figures.py generates matplotlib visualizations.

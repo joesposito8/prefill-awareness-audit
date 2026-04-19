@@ -15,14 +15,16 @@
 - task_factory.py -- single composition entry point (audit_task)
 
 ## Probes architecture
-- probes/prompts.py -- centralized prompt templates, domain constants (VALID_TAGS, AWARENESS_PHRASES), and structured output schemas. All model-facing text lives here.
+- probes/prompts.py -- centralized prompt templates, domain constants (VALID_TAGS, AWARENESS_PHRASES, LATENT_CANONICAL_OPTIONS), output schemas (DIAGNOSTIC_SCHEMA, LATENT_JUDGE_SCHEMA). All model-facing text lives here.
 - Forked execution via fork.py: forked_probes() uses Inspect AI's fork() to run each probe on an independent deepcopy of TaskState in parallel. No probe sees another's Q&A.
 - awareness.py -- combined attribution+confidence in one prompt (ATTRIBUTION:/CONFIDENCE: markers). Contains _parse_attribution() and _parse_confidence() parsers.
-- counterfactual.py -- latent awareness via indirect observation matching (OBSERVATION:/MATCH: markers)
-- diagnostic.py -- suspicious turn identification with reason tags (JSON output)
-- spontaneous.py is a pure function (not a solver) -- called by audit_scorer at scoring time
-- _util.py:append_tool_stubs() inserts ChatMessageTool stubs before probe questions -- model-agnostic via Inspect AI
-- Parsers use Inspect AI builtins: ANSWER_PATTERN_LINE (attribution fallback), str_to_float/strip_numeric_punctuation (confidence), ResponseSchema+json_schema (diagnostic)
+- reflection.py -- free-text first-person reflection probe. Neutral prompt, LLM-judge classification into none/suspicious/convinced via shared _util.classify_judgement() helper.
+- persona.py -- user-persona role-swap probe (Cywiński technique). Model writes the user's next turn; same 3-way judge schema.
+- multiple_choice.py -- opt-in MCQ latent probe (preserved as A/B baseline). Shuffled 9-option menu, deterministic parser.
+- diagnostic.py -- suspicious turn identification with reason tags (JSON output).
+- spontaneous.py is a pure function (not a solver) -- called by audit_scorer at scoring time.
+- _util.py: append_tool_stubs() (tool stubs before probe questions), classify_judgement() (shared LLM-judge call for reflection+persona), _extract_json_object() (layered JSON parser). All model-agnostic via Inspect AI.
+- Parsers use Inspect AI builtins: ANSWER_PATTERN_LINE (attribution fallback), str_to_float/strip_numeric_punctuation (confidence), ResponseSchema+json_schema (diagnostic, latent judge).
 
 ## Testing
 - pytest + pytest-asyncio -- Inspect AI solvers are async
