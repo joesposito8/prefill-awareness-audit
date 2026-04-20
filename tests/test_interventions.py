@@ -442,28 +442,6 @@ class TestValidator:
         assert not passed
         assert len(violations) >= 3
 
-    def test_preserve_message_count_false_skips_check(self):
-        constraints = InterventionConstraints(preserve_message_count=False)
-        original = _make_sample()
-        modified = original.model_copy(deep=True)
-        modified.input.append(ChatMessageAssistant(content="extra"))
-        passed, violations = validate_intervention(
-            original, modified, [1], constraints
-        )
-        # Should not fail on message count (may fail on other checks)
-        assert not any("count" in v.lower() for v in violations)
-
-    def test_preserve_role_order_false_skips_check(self):
-        constraints = InterventionConstraints(preserve_role_order=False)
-        original = _make_sample()
-        modified = original.model_copy(deep=True)
-        modified.input[1] = ChatMessageUser(content="wrong role")
-        passed, violations = validate_intervention(
-            original, modified, [1], constraints
-        )
-        # Should not fail on role order specifically
-        assert not any("role order" in v.lower() for v in violations)
-
 
 # ---------------------------------------------------------------------------
 # Scope resolution

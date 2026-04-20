@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
-from dataclasses import asdict
 from pathlib import Path
 
 from inspect_ai import Task
@@ -175,11 +174,9 @@ def make_audit_task(
         metadata={
             "condition": cond.value,
             "profile": profile.name,
-            "intervention_constraints": {
-                k: v
-                for k, v in asdict(profile.intervention_constraints).items()
-                if isinstance(v, bool)
-            },
+            "protected_roles": list(
+                profile.intervention_constraints.protected_roles
+            ),
             "custom_probes": probes is not None,
         },
     )

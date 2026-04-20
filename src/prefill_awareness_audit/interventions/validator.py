@@ -56,7 +56,7 @@ def validate_intervention(
     mod_messages = modified.input if isinstance(modified.input, list) else []
 
     # 1. Message count preserved
-    if constraints.preserve_message_count and len(orig_messages) != len(mod_messages):
+    if len(orig_messages) != len(mod_messages):
         violations.append(
             f"Message count changed: {len(orig_messages)} -> {len(mod_messages)}"
         )
@@ -64,11 +64,10 @@ def validate_intervention(
         return (False, violations)
 
     # 2. Role order preserved
-    if constraints.preserve_role_order:
-        orig_roles = [m.role for m in orig_messages]
-        mod_roles = [m.role for m in mod_messages]
-        if orig_roles != mod_roles:
-            violations.append(f"Role order changed: {orig_roles} -> {mod_roles}")
+    orig_roles = [m.role for m in orig_messages]
+    mod_roles = [m.role for m in mod_messages]
+    if orig_roles != mod_roles:
+        violations.append(f"Role order changed: {orig_roles} -> {mod_roles}")
 
     target_set = set(target_indices)
 

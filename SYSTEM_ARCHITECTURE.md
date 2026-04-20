@@ -140,7 +140,7 @@ Wraps `make_audit_task()` with a fixed `use_tools(tools) + generate(tool_calls="
 
 **AuditTarget**: Per-sample target span (sample_id, message_indices, target_kind).
 
-**InterventionConstraints**: Structural invariants every intervention must preserve — `protected_roles` (roles the intervention cannot modify), `preserve_message_count`, `preserve_role_order`. The validator rejects any intervention that violates them.
+**InterventionConstraints**: Structural invariants every intervention must preserve — `protected_roles` (roles the intervention cannot modify). Message count and role order are always preserved; the validator rejects any intervention that changes them.
 
 **AuditProfile**: The one object a benchmark integration provides. Contains name, main_score_fields, target_span_selector, allowed_conditions, intervention_constraints, and optional semantic_guard.
 

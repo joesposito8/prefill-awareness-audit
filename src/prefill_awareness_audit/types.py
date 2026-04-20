@@ -43,15 +43,12 @@ class AuditTarget:
 class InterventionConstraints:
     """Structural invariants every intervention must preserve.
 
-    Specifies which roles cannot be modified and whether the message
-    count and role order must remain unchanged.  The validator checks
-    these against the modified sample and rejects any intervention
-    that violates them.
+    Declares which roles cannot be modified. Message count and role
+    order are always preserved — the validator rejects any intervention
+    that changes them.
     """
 
     protected_roles: tuple[str, ...] = ("user", "tool")
-    preserve_message_count: bool = True
-    preserve_role_order: bool = True
 
 
 @dataclass

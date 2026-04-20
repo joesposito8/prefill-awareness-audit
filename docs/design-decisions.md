@@ -77,7 +77,7 @@ Plus PROBE_ONLY (probes, no intervention — the baseline every intervention is 
 
 ### 2.2 Declarative InterventionConstraints
 
-**Decision:** `InterventionConstraints` (`types.py:43-54`) is a frozen dataclass with three structural invariants: `protected_roles` (a tuple of role names the intervention cannot modify), `preserve_message_count`, and `preserve_role_order`. The validator rejects any intervention that violates them, and the `AuditProfile` attaches one instance per benchmark.
+**Decision:** `InterventionConstraints` (`types.py:42-50`) is a frozen dataclass with one declarative knob: `protected_roles` (a tuple of role names the intervention cannot modify). The validator additionally enforces two hardcoded invariants — message count and role order — which every valid intervention preserves. The `AuditProfile` attaches one `InterventionConstraints` instance per benchmark.
 
 **Alternative:** Invariant specification language ("preserve_tone=True, preserve_formality_level=True").
 
@@ -417,8 +417,8 @@ Both include metadata (sample_id, context_indices, model) for debugging and cach
 **Decision:** Post-intervention validation (`interventions/validator.py`) in two phases:
 
 **Phase 1 -- Structural validation** (six checks):
-1. Message count preserved (if `preserve_message_count=True`)
-2. Role order preserved (if `preserve_role_order=True`)
+1. Message count preserved
+2. Role order preserved
 3. Protected roles untouched
 4. Non-target messages byte-identical
 5. Tool messages completely intact (tool_call_id, function metadata, content)
