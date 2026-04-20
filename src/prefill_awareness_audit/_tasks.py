@@ -16,7 +16,7 @@ def prefill_awareness_audit(
     log_dir: str = "",
     data: str = "",
     condition: str = "PROBE_ONLY",
-    probes: str = "",
+    probes: str | list[str] = "",
     limit: int | None = None,
     seed: int = 42,
 ) -> Task:
@@ -52,6 +52,9 @@ def prefill_awareness_audit(
         limit: Maximum number of samples.
         seed: Random seed.
     """
+    if isinstance(probes, list):
+        probes = ",".join(probes)
+
     sources = sum(bool(s) for s in (task, log, data))
     if sources == 0:
         raise ValueError(
