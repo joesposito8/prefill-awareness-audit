@@ -48,4 +48,5 @@ python_files = ["test_*.py"]
 dev = [
     "pytest",
     "pytest-asyncio",
+    "pytest-cov>=7.1.0",
 ]
