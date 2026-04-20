@@ -364,46 +364,25 @@ class TestValidator:
         assert passed
         assert violations == []
 
-    def test_message_count_changed_fails(self):
+    @pytest.mark.parametrize(
+        "mutate, keyword",
+        [
+            (lambda m: m.input.append(ChatMessageAssistant(content="extra")), "count"),
+            (lambda m: m.input.__setitem__(1, ChatMessageUser(content="wrong role")), "role"),
+            (lambda m: setattr(m.input[0], "text", "Modified user message"), "protected"),
+            (lambda m: setattr(m.input[3], "text", "Modified non-target"), "non-target"),
+        ],
+        ids=["message_count", "role_order", "protected_role", "non_target"],
+    )
+    def test_validation_failures(self, mutate, keyword):
         original = _make_sample()
         modified = original.model_copy(deep=True)
-        modified.input.append(ChatMessageAssistant(content="extra"))
+        mutate(modified)
         passed, violations = validate_intervention(
             original, modified, [1], _default_constraints()
         )
         assert not passed
-        assert any("count" in v.lower() for v in violations)
-
-    def test_role_order_changed_fails(self):
-        original = _make_sample()
-        modified = original.model_copy(deep=True)
-        # Swap roles by replacing messages
-        modified.input[1] = ChatMessageUser(content="wrong role")
-        passed, violations = validate_intervention(
-            original, modified, [1], _default_constraints()
-        )
-        assert not passed
-        assert any("role" in v.lower() for v in violations)
-
-    def test_protected_role_modified_fails(self):
-        original = _make_sample()
-        modified = original.model_copy(deep=True)
-        modified.input[0].text = "Modified user message"  # user is protected
-        passed, violations = validate_intervention(
-            original, modified, [1], _default_constraints()
-        )
-        assert not passed
-        assert any("protected" in v.lower() for v in violations)
-
-    def test_non_target_modified_fails(self):
-        original = _make_sample()
-        modified = original.model_copy(deep=True)
-        modified.input[3].text = "Modified non-target assistant"
-        passed, violations = validate_intervention(
-            original, modified, [1], _default_constraints()  # only index 1 is target
-        )
-        assert not passed
-        assert any("non-target" in v.lower() for v in violations)
+        assert any(keyword in v.lower() for v in violations)
 
     def test_tool_message_modified_fails(self):
         original = _make_sample([

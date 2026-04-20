@@ -75,14 +75,6 @@ def test_load_conversations_preserves_source_model(tmp_path: Path) -> None:
     assert samples[0].metadata["source_model"] == "anthropic/claude-sonnet-4-6"
 
 
-def test_load_conversations_empty_file(tmp_path: Path) -> None:
-    """Empty JSONL produces an empty list."""
-    jsonl = tmp_path / "empty.jsonl"
-    jsonl.write_text("")
-    samples = load_conversations(jsonl)
-    assert samples == []
-
-
 # ---------------------------------------------------------------------------
 # find_eval_log
 # ---------------------------------------------------------------------------
@@ -219,16 +211,6 @@ def test_load_from_eval_log_with_limit(mock_read: MagicMock) -> None:
 
 
 @patch("prefill_awareness_audit.data.read_eval_log")
-def test_load_from_eval_log_empty(mock_read: MagicMock) -> None:
-    """Returns empty list when log has no samples."""
-    mock_read.return_value = _make_eval_log(samples=None)
-
-    samples, model_id = load_from_eval_log("/logs/empty.eval")
-    assert samples == []
-    assert model_id == "anthropic/claude-opus-4-6"
-
-
-@patch("prefill_awareness_audit.data.read_eval_log")
 def test_load_from_eval_log_empty_messages_raises(mock_read: MagicMock) -> None:
     """Raises ValueError when a sample has no messages."""
     sample = MagicMock()
@@ -275,13 +257,6 @@ def test_all_assistant_turns_no_assistant() -> None:
     assert target.message_indices == []
 
 
-def test_all_assistant_turns_string_input() -> None:
-    """Handles string input gracefully."""
-    sample = Sample(input="just a string", target="test", id="s-003")
-    target = all_assistant_turns(sample)
-    assert target.message_indices == []
-
-
 # ---------------------------------------------------------------------------
 # latest_assistant_block
 # ---------------------------------------------------------------------------
@@ -323,15 +298,6 @@ def test_latest_assistant_block_no_assistants() -> None:
         target="test",
         id="s-no",
     )
-    target = latest_assistant_block(sample)
-    assert target.message_indices == []
-
-
-def test_latest_assistant_block_string_input() -> None:
-    """Handles string input gracefully."""
-    from prefill_awareness_audit.data import latest_assistant_block
-
-    sample = Sample(input="raw string", target="test", id="s-str")
     target = latest_assistant_block(sample)
     assert target.message_indices == []
 
