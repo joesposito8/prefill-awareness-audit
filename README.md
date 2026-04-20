@@ -96,45 +96,45 @@ For the literature grounding (Cywiński et al., AuditBench, Mallen et al., Pacch
 
 ### Path 2: "Is awareness confounding my eval?" (custom @task)
 
-When you need intervention conditions (LOCAL_DETERMINISTIC, LOCAL_REWRITE, etc.) and benchmark re-scoring, write a custom `@task` with `make_audit_task()`:
+When you need intervention conditions (LOCAL_DETERMINISTIC, LOCAL_REWRITE, etc.) and benchmark re-scoring, write a custom `@task` that calls `make_audit_task()` or `continuation_audit()` with a benchmark-specific `AuditProfile`. Use `continuation_audit()` when you want the model to generate its next turn before probing (agent trajectories); use `make_audit_task()` for archival transcripts or when you need full control over the solver chain.
 
 ```python
 from inspect_ai import task, Task
-from inspect_ai.solver import generate
-from prefill_awareness_audit import make_audit_task, AuditProfile, RewritePolicy, Condition
+from prefill_awareness_audit import (
+    AuditProfile,
+    Condition,
+    InterventionConstraints,
+    continuation_audit,
+    latest_assistant_block,
+)
 
 profile = AuditProfile(
     name="my-benchmark",
     main_score_fields=["continues_misaligned"],
-    target_span_selector=find_prefilled_assistant_turns,  # your function: Sample -> AuditTarget
+    target_span_selector=latest_assistant_block,  # or a custom selector: Sample -> AuditTarget
     allowed_conditions=[
-        Condition.BASELINE,
         Condition.PROBE_ONLY,
         Condition.LOCAL_DETERMINISTIC,
         Condition.LOCAL_REWRITE,
     ],
-    rewrite_policy=RewritePolicy(
-        protected_roles=("system",),
-        preserve_message_count=True,
-        preserve_role_order=True,
-    ),
+    intervention_constraints=InterventionConstraints(protected_roles=("user", "tool", "system")),
 )
 
+
 @task
-def my_benchmark_audit(condition: str = "BASELINE") -> Task:
-    return make_audit_task(
+def my_benchmark_audit(condition: str = "PROBE_ONLY") -> Task:
+    return continuation_audit(
         data=load_my_dataset(),
         condition=condition,
         profile=profile,
-        solver=[generate()],
         scorer=my_scorer(),
+        tools=my_stub_tools(),
     )
 ```
 
 Run each condition, then compare:
 
 ```bash
-inspect eval my_benchmark_audit.py -T condition=BASELINE
 inspect eval my_benchmark_audit.py -T condition=PROBE_ONLY
 inspect eval my_benchmark_audit.py -T condition=LOCAL_DETERMINISTIC
 inspect eval my_benchmark_audit.py -T condition=LOCAL_REWRITE

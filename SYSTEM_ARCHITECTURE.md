@@ -9,9 +9,10 @@ src/prefill_awareness_audit/
   _registry.py                   Entry point for Inspect AI task discovery
   _tasks.py                      Generic @task (task=, log=, data= input paths)
   data.py                        Data loading, log discovery, PROBE_ONLY_PROFILE
-  types.py                      Condition, AuditTarget, RewritePolicy, AuditProfile,
+  types.py                       Condition, Attribution, AuditTarget,
+                                 InterventionConstraints, AuditProfile,
                                  ConditionSummary, ComparisonTable
-  task_factory.py                make_audit_task(), build_audit_task(), audit_task()
+  task_factory.py                make_audit_task(), continuation_audit()
 
   probes/                        Inspect solvers appended after generate()
     prompts.py                   Centralized prompt templates, constants, output schemas
@@ -28,7 +29,7 @@ src/prefill_awareness_audit/
     __init__.py                  apply_intervention() dispatcher
     deterministic.py             Formatting/provenance cleanup
     rewrite.py                   Contrastive style rewrite
-    validator.py                 Post-intervention validation against RewritePolicy
+    validator.py                 Post-intervention validation against InterventionConstraints
 
   scoring/
     audit_scorer.py              Wraps any scorer, adds probe dimensions + custom metrics
@@ -72,54 +73,74 @@ Loads conversation data from a standard JSONL file. Each record is an Inspect AI
 
 ### Path 3 -- Custom @task (complex benchmarks)
 
+Use `make_audit_task()` for archival transcripts with a custom solver chain, or `continuation_audit()` when you want the model to generate its next turn before probing:
+
 ```python
 @task
-def misalignment_audit(condition="BASELINE", limit=None):
-    return make_audit_task(
+def misalignment_audit(condition="PROBE_ONLY", limit=None):
+    return continuation_audit(
         data=load_dataset(limit=limit),
         condition=condition,
         profile=my_profile,
         scorer=my_scorer(),
-        solver=[use_tools(tools), generate(tool_calls="none")],
+        tools=get_stub_tools(),
     )
 ```
 
 Full control over data loading, target selection, scoring, and solver. Used when benchmarks need a custom dataset loader, target_span_selector, or scorer.
 
-## make_audit_task() API
+## make_audit_task() and continuation_audit() API
 
-The primary user-facing composition helper:
+Two user-facing composition helpers. Pick based on whether the model should generate a fresh turn before probing.
 
 ```python
 def make_audit_task(
     data: str | Path | Dataset,
-    condition: str | Condition,
-    profile: AuditProfile | None = None,  # None = PROBE_ONLY_PROFILE
-    scorer: Scorer | None = None,         # None = probes only
-    solver: list[Solver] | None = None,   # None = [generate()]
+    condition: str | Condition = "PROBE_ONLY",
+    profile: AuditProfile | None = None,       # None = PROBE_ONLY_PROFILE
+    scorer: Scorer | None = None,              # None = no-op scorer (probes only)
+    solver: list[Solver] | None = None,        # None = [generate()]
+    probes: list[Solver] | str | None = None,  # None = four-probe default set
     limit: int | None = None,
     seed: int = 42,
 ) -> Task:
 ```
 
-Handles: data loading (if path), condition validation, intervention application (including the sync/async split via ThreadPoolExecutor), probe wiring, scorer wrapping.
+Handles: data loading (if path), condition validation, intervention application (including the sync/async split via `ThreadPoolExecutor`), probe wiring, scorer wrapping.
 
-`PROBE_ONLY_PROFILE` is a conservative profile allowing only BASELINE and PROBE_ONLY conditions, with `all_assistant_turns` as the target span selector. Intervention conditions require a benchmark-specific AuditProfile.
+```python
+def continuation_audit(
+    data: str | Path | Dataset,
+    tools: list[Tool] | None = None,
+    scorer: Scorer | None = None,
+    condition: str | Condition = "PROBE_ONLY",
+    profile: AuditProfile | None = None,
+    limit: int | None = None,
+    seed: int = 42,
+) -> Task:
+```
+
+Wraps `make_audit_task()` with a fixed `use_tools(tools) + generate(tool_calls="none")` solver chain and probe templates anchored on "your last message" — suitable for agent trajectories where the model should generate its next turn before being asked about the prefilled history.
+
+`PROBE_ONLY_PROFILE` is a conservative profile allowing only `Condition.PROBE_ONLY`, with `all_assistant_turns` as the target span selector. Intervention conditions require a benchmark-specific `AuditProfile`.
 
 ## Data loading (data.py)
 
-- `load_conversations(path)` -- JSONL to list[Sample] via `json_dataset()`
+- `load_conversations(path)` -- JSONL to list[Sample] via `json_dataset()`; defaults missing `source_model` metadata to `"unknown"`
 - `find_eval_log(task, log_dir)` -- log discovery via `list_eval_logs()` with task name filter
-- `load_from_eval_log(path, limit)` -- eval log to (list[Sample], model_id); preserves original scores in sample metadata
+- `load_from_eval_log(path, limit)` -- eval log to (list[Sample], model_id); preserves original scores in sample metadata and sets `source_model` to the log's probe model
 - `all_assistant_turns(sample)` -- default target_span_selector, selects all assistant-role message indices
+- `latest_assistant_block(sample)` -- target_span_selector for the most recent contiguous assistant/tool block (agent trajectories)
 
 ## Key types
 
-**Condition** (StrEnum): BASELINE, PROBE_ONLY, LOCAL_DETERMINISTIC, LOCAL_REWRITE, BLOCK_DETERMINISTIC, BLOCK_REWRITE, GLOBAL_DETERMINISTIC.
+**Condition** (StrEnum): PROBE_ONLY, LOCAL_DETERMINISTIC, LOCAL_REWRITE, BLOCK_DETERMINISTIC, BLOCK_REWRITE, GLOBAL_DETERMINISTIC.
+
+**Attribution** (StrEnum): SELF, NOT_SELF, UNCERTAIN — the model's claim about a prefilled assistant turn's origin.
 
 **AuditTarget**: Per-sample target span (sample_id, message_indices, target_kind).
 
-**RewritePolicy**: Permission-based -- booleans for each scope/mechanism pair, plus structural guards (protected_roles, preserve_message_count, preserve_role_order).
+**InterventionConstraints**: Structural invariants every intervention must preserve — `protected_roles` (roles the intervention cannot modify), `preserve_message_count`, `preserve_role_order`. The validator rejects any intervention that violates them.
 
 **AuditProfile**: The one object a benchmark integration provides. Contains name, main_score_fields, target_span_selector, allowed_conditions, intervention_constraints, and optional semantic_guard.
 
@@ -168,9 +189,9 @@ Implemented in `scoring/metrics.py` with numpy only (no scipy):
 
 ## Component responsibilities
 
-- **task_factory**: `make_audit_task()` is the primary API -- resolves defaults, loads data, applies interventions, delegates to `build_audit_task()`. The sync/async split (interventions need async for model calls, but @task is sync) is handled internally via ThreadPoolExecutor.
+- **task_factory**: `make_audit_task()` is the primary API -- resolves defaults, loads data, applies interventions, wires probes, and wraps the scorer. `continuation_audit()` layers a fixed continuation solver chain on top. The sync/async split (interventions need async for model calls, but `@task` is sync) is handled internally via `ThreadPoolExecutor`.
 - **probes**: Solvers that run after generate() via forked execution (each probe gets an independent deepcopy of TaskState). Cannot influence the main behavioral score. Four active probes in the default set (awareness -- combined attribution+confidence, reflection -- free-text latent with LLM judge, persona -- user-persona role-swap with LLM judge, diagnostic -- reason tags), plus one opt-in latent probe (multiple_choice -- preserved MCQ as A/B baseline) and one passive scorer-side signal (spontaneous).
-- **interventions**: Each takes (samples, AuditProfile) and returns modified samples. Validates scope against RewritePolicy before applying. Deterministic and rewrite share the scope parameterization.
+- **interventions**: Each takes (samples, AuditProfile) and returns modified samples. Validates scope against `InterventionConstraints` before applying. Deterministic and rewrite share the scope parameterization.
 - **scoring**: audit_scorer wraps the original scorer, adding probe dimensions to Score and registering custom metrics for per-condition aggregation. metrics.py defines all custom @metric functions.
 - **analysis**: compare.py loads eval logs and builds cross-condition comparison tables. figures.py generates matplotlib visualizations.
 

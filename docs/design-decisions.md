@@ -2,7 +2,7 @@
 
 Reference document for PAA-9 (LessWrong post). Organized by development phase, each decision follows: **Decision / Alternatives considered / Why this way**. Where relevant, a _Post angle_ note flags what makes the decision narratively interesting.
 
-Sources: git history (25 commits), inline code comments, PROJECT_VISION.md, orchestrator context items (latent awareness probe design, build_audit_task split, architectural plan).
+Sources: git history, inline code comments, PROJECT_VISION.md, orchestrator context items (latent awareness probe design, task-factory composition, architectural plan).
 
 ---
 
@@ -43,8 +43,8 @@ Each non-goal in PROJECT_VISION.md corresponds to an alternative that was consid
 | Non-goal | Corresponding positive decision |
 |---|---|
 | No cumulative interventions | Independent branches for clean attribution (1.2) |
-| No invariant specification language | Permission-based RewritePolicy (2.2) |
-| No global user/system rewriting | Protected roles in RewritePolicy (2.2) |
+| No invariant specification language | Declarative InterventionConstraints (2.2) |
+| No global user/system rewriting | Protected roles in InterventionConstraints (2.2) |
 | No iterative optimization | Single-pass interventions; cache enables re-runs |
 | No non-transcript evals | Scope limited to prefill attacks specifically |
 | No standalone benchmark | Audit-as-wrapper (1.1) |
@@ -57,13 +57,13 @@ Each non-goal in PROJECT_VISION.md corresponds to an alternative that was consid
 
 ### 2.1 Condition as StrEnum
 
-**Decision:** Seven named conditions in a Python 3.11+ StrEnum (`types.py:14-23`), covering the scope x mechanism matrix.
+**Decision:** Six named conditions in a Python 3.11+ StrEnum (`types.py:14-22`), covering the scope x mechanism matrix plus the probe-only passthrough.
 
 **Alternative:** Dynamic condition generation from (scope, mechanism) tuples.
 
 **Why:** Named conditions are explicit in logs, CLI args (`inspect eval -T condition=LOCAL_REWRITE`), and analysis code. No runtime construction ambiguity. StrEnum makes them both enumerable and automatically serializable to JSON strings.
 
-The seven conditions form a structured matrix:
+The six conditions:
 
 | | Deterministic | Rewrite |
 |---|---|---|
@@ -71,17 +71,17 @@ The seven conditions form a structured matrix:
 | Block (all prefilled assistant turns) | BLOCK_DETERMINISTIC | BLOCK_REWRITE |
 | Global (transcript-wide) | GLOBAL_DETERMINISTIC | -- |
 
-Plus BASELINE (no probes, no intervention) and PROBE_ONLY (probes, no intervention).
+Plus PROBE_ONLY (probes, no intervention — the baseline every intervention is compared against). Gating whether the benchmark solver also runs is the integrator's choice via the `solver` argument to `make_audit_task()`.
 
 **Note:** No GLOBAL_REWRITE condition exists. Open question: principled exclusion (too much modification destroys the eval) or just not yet needed?
 
-### 2.2 Permission-based RewritePolicy
+### 2.2 Declarative InterventionConstraints
 
-**Decision:** RewritePolicy (`types.py:35-46`) uses boolean flags (`allow_local_deterministic`, `allow_block_rewrite`, etc.) and structural guards (`protected_roles`, `preserve_message_count`, `preserve_role_order`).
+**Decision:** `InterventionConstraints` (`types.py:43-54`) is a frozen dataclass with three structural invariants: `protected_roles` (a tuple of role names the intervention cannot modify), `preserve_message_count`, and `preserve_role_order`. The validator rejects any intervention that violates them, and the `AuditProfile` attaches one instance per benchmark.
 
 **Alternative:** Invariant specification language ("preserve_tone=True, preserve_formality_level=True").
 
-**Why:** Invariant specs require the system to verify semantic properties it can't reliably check. Permissions are binary and mechanically enforceable. The benchmark author says "you may rewrite block-scope assistant messages" not "preserve these 12 semantic properties." This is explicitly called out in PROJECT_VISION.md as a non-goal.
+**Why:** Invariant specs require the system to verify semantic properties it can't reliably check. Structural constraints are mechanically enforceable: message count, role order, and protected-role untouchedness are byte-level invariants the validator can compare. The benchmark author declares "users and tools are off-limits" not "preserve these 12 semantic properties." PROJECT_VISION.md calls invariant-spec languages out as a non-goal.
 
 **Design choice:** `protected_roles` defaults to `("user", "tool")`. Only assistant content is modified by default. System messages are not protected by default but can be added per-benchmark.
 
@@ -436,21 +436,17 @@ _Post angle:_ Another instance where framework-level assumptions (every message 
 
 ## 6. Task Factory and Integration
 
-### 6.1 Sync build_audit_task + async audit_task
+### 6.1 Sync/async boundary collapsed inside make_audit_task
 
-**Decision:** Sync core `build_audit_task()` (`task_factory.py:20-83`) separated from async wrapper `audit_task()` (`task_factory.py:86-127`). The async wrapper handles intervention application, then delegates to the sync core.
+**Decision (current):** `make_audit_task()` is the single composition entry point. It runs `apply_intervention` (async) internally from its synchronous `@task` body using `concurrent.futures.ThreadPoolExecutor`, so callers never see the async boundary.
 
-**Why:** Inspect AI's `@task` decorator is synchronous. The case study needs to call `apply_intervention` (async, because rewrite interventions make model calls) separately. The practical solution: `concurrent.futures.ThreadPoolExecutor` to run the async intervention from a sync `@task` context. This was extracted in commit `40e745b` when wiring up the misalignment-continuation integration.
+**History:** An earlier split separated a sync `build_audit_task()` core from an async `audit_task()` wrapper. The split was collapsed once the thread-pool trampoline was stable, because the two-function surface was harder to teach than a single composition helper that handles the boundary internally.
 
-_Post angle:_ A framework constraint, not a design preference. If Inspect AI adds async `@task` support, this can be simplified back to a single `audit_task()`.
+**Why the boundary exists at all:** Inspect AI's `@task` decorator is synchronous. Rewrite interventions make model calls and are async. The thread-pool trampoline is the practical way to run async work from a sync task body. If Inspect AI ever adds async `@task` support, `make_audit_task` can drop the pool.
 
-### 6.2 BASELINE gets no probes
+_Post angle:_ A framework constraint made visible — and then hidden — by the API. The first version exposed the boundary as two functions; the current version hides it behind one.
 
-**Decision:** Only the BASELINE condition runs the benchmark completely unmodified. All other conditions (including PROBE_ONLY) get probes appended after `generate()` (`task_factory.py:55-65`).
-
-**Why:** BASELINE is the ground truth for what the benchmark measures without any audit interference. PROBE_ONLY isolates the effect of asking awareness questions. Comparing BASELINE vs. PROBE_ONLY reveals whether probes themselves alter the model's behavioral score -- a necessary sanity check before interpreting intervention results.
-
-### 6.3 Seeded dataset loading
+### 6.2 Seeded dataset loading
 
 **Decision:** Fixed `seed=42` for the benchmark's dataset loader (commit `28a9aa5`).
 
@@ -458,7 +454,7 @@ _Post angle:_ A framework constraint, not a design preference. If Inspect AI add
 
 **Why seed at the source:** The benchmark's dataset loader handles its own randomization. Seeding at the source is the only reliable way to guarantee identical samples across conditions. Seeding at the task factory level would be too late -- the dataset is already randomized before it reaches the factory.
 
-### 6.4 Scorer wrapping pattern
+### 6.3 Scorer wrapping pattern
 
 **Decision:** `audit_scorer()` (`scoring/audit_scorer.py:19-107`) wraps the benchmark's native scorer. It calls the base scorer first, then merges probe dimensions into a unified `Score(value={...})` dict.
 
@@ -510,8 +506,8 @@ Things where the code and git history don't reveal full rationale. These may be 
 | `992cb9a` | Core | Centralize prompts, harden parsers |
 | `5e0934f` | Core | 37 tests for probes and scorer |
 | `993ac9d` | Interventions | Deterministic cleanup, model-based rewrite, two-level cache, validator |
-| `f0a0e50` | Task factory | audit_task() composition, audit_tasks() for parallel execution |
-| `40e745b` | Integration | Misalignment-continuation case study, build_audit_task extraction |
+| `f0a0e50` | Task factory | Task composition helper, parallel-condition execution |
+| `40e745b` | Integration | Misalignment-continuation case study, task-factory composition helper |
 | `761dec1` | Bug fix | Validator false positives on tool-calling messages |
 | `e4bfff1` | Bug fix | Spontaneous detection false positives (two-tier phrase matching) |
 | `28a9aa5` | Bug fix | Seeded dataset loading for cross-condition reproducibility |

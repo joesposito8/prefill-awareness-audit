@@ -26,7 +26,7 @@ Interventions are defined by two axes:
 - **Scope**: local (target span only), block (all prefilled assistant turns), global (transcript-wide)
 - **Mechanism**: deterministic (rule-based formatting cleanup) or rewrite (model-based contrastive style matching)
 
-Four conditions are always required (baseline, probe-only, local-deterministic, local-rewrite). Additional conditions are unlocked by the benchmark's RewritePolicy.
+Three conditions are always required (probe-only, local-deterministic, local-rewrite). Additional conditions (block, global) are declared per-benchmark via `AuditProfile.allowed_conditions`, and every intervention is validated against the profile's `InterventionConstraints`.
 
 ## Scorecard
 
@@ -51,7 +51,7 @@ UKGovernmentBEIS/misalignment-continuation -- a benchmark that evaluates whether
 - Comprehensively measuring prefill awareness as a capability
 - Generating control baselines (accepted as optional external input)
 - Cumulative/stacked interventions as primary analysis
-- Invariant specification language (permission-based RewritePolicy instead)
+- Invariant specification language (declarative `InterventionConstraints` with protected roles instead)
 - Global model rewriting of user/system messages
 - Iterative optimization loops
 - Supporting non-transcript-based evals
