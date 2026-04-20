@@ -210,7 +210,7 @@ def format_comparison_table(table: ComparisonTable) -> str:
             _append_n(lines, m, "mc_n_samples")
 
         # Diagnostic tags
-        lines.append("  Diagnostic  ", )
+        lines.append("  Diagnostic")
         for tag in sorted(_get_diagnostic_tags(m)):
             key = f"diagnostic_{tag}_rate"
             if key in m:
