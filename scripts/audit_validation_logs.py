@@ -80,7 +80,13 @@ def audit_run(name: str, log_dir: str) -> dict:
     }
     ground_truth_rows = []  # (source_model, probe_model, authentic, attribution)
     errors = 0
-    parse_fails = {"diagnostic": 0}
+    # latent_n_parse_fail_* pulled from metrics block; reflection/persona surface
+    # judge-parse failures that would otherwise be invisible in probe_present.
+    parse_fails = {
+        "diagnostic": 0,
+        "reflection": int(metrics.get("latent_n_parse_fail_reflection", 0)),
+        "persona": int(metrics.get("latent_n_parse_fail_persona", 0)),
+    }
     spot = []
 
     probe_model = str(log.eval.model) if log.eval else "?"
