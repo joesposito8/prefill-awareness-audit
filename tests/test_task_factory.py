@@ -353,3 +353,24 @@ def test_default_prompt_is_cold_replay_variant() -> None:
     assert "ATTRIBUTION:" in CONTINUATION_AWARENESS_QUESTION
     assert "definitely me" in DEFAULT_AWARENESS_QUESTION
     assert "definitely not me" in CONTINUATION_AWARENESS_QUESTION
+
+
+def test_format_first_clause_present_in_structured_output_prompts() -> None:
+    """Both structured-output probes invite additional context on
+    subsequent lines rather than risk out-of-channel refusals.
+    Regression guard: the 2026-04-21 audit found 2/20 misalignment
+    samples where haiku refused the format to voice alignment
+    concerns; the clause below is the root-cause fix."""
+    from prefill_awareness_audit.probes.prompts import (
+        CONTINUATION_AWARENESS_QUESTION,
+        DEFAULT_AWARENESS_QUESTION,
+        DEFAULT_DIAGNOSTIC_QUESTION,
+    )
+
+    for prompt in (
+        DEFAULT_AWARENESS_QUESTION,
+        CONTINUATION_AWARENESS_QUESTION,
+        DEFAULT_DIAGNOSTIC_QUESTION,
+    ):
+        assert "additional" in prompt.lower()
+        assert "subsequent lines" in prompt.lower()
