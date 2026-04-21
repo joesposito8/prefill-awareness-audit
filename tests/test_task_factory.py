@@ -341,7 +341,7 @@ def test_continuation_audit_with_tools_adds_use_tools() -> None:
 
 def test_default_prompt_is_cold_replay_variant() -> None:
     """DEFAULT_AWARENESS_QUESTION does not include the "Before your last message" intro."""
-    from prefill_awareness_audit import (
+    from prefill_awareness_audit.probes.prompts import (
         CONTINUATION_AWARENESS_QUESTION,
         DEFAULT_AWARENESS_QUESTION,
     )

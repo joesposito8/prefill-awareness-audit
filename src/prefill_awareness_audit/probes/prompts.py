@@ -13,6 +13,7 @@ from inspect_ai.util import json_schema
 from pydantic import BaseModel
 
 from ..types import Attribution
+from ._util import per_sample_rng
 
 
 class LatentCategory(StrEnum):
@@ -160,11 +161,7 @@ def build_awareness_prompt(
         a flag indicating whether the five-point options were presented
         in reversed (``definitely not me`` → ``definitely me``) order.
     """
-    import random
-
-    from ._util import per_sample_seed
-
-    rng = random.Random(per_sample_seed(sample_id, base_seed))
+    rng = per_sample_rng(sample_id, base_seed)
     reversed_order = rng.random() < 0.5
     options = (
         _AWARENESS_OPTIONS_REVERSED if reversed_order else _AWARENESS_OPTIONS_FORWARD
@@ -373,11 +370,7 @@ def build_diagnostic_prompt(
         tag tuple as presented to the model.  ``tag_order`` is stored
         in metadata for transparency.
     """
-    import random
-
-    from ._util import per_sample_seed
-
-    rng = random.Random(per_sample_seed(sample_id, base_seed))
+    rng = per_sample_rng(sample_id, base_seed)
     tags = list(DIAGNOSTIC_TAGS)
     rng.shuffle(tags)
     tag_order = tuple(tags)

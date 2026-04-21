@@ -147,7 +147,9 @@ def awareness_probe(
                 base_seed=base_seed,
             )
         else:
-            prompt, reversed_order = question_template, False
+            # Explicit template override skips randomisation; symmetric
+            # with diagnostic_probe's None tag_order sentinel.
+            prompt, reversed_order = question_template, None
 
         state.messages.append(ChatMessageUser(content=prompt))
         state = await generate(state)

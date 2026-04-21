@@ -39,7 +39,6 @@ def _parse_diagnostic(text: str) -> dict:
 @solver
 def diagnostic_probe(
     question_template: str | None = None,
-    metadata_key: str = "diagnostic",
     use_structured_output: bool = True,
     *,
     base_seed: int = 43,
@@ -94,7 +93,7 @@ def diagnostic_probe(
 
         if state.metadata is None:
             state.metadata = {}
-        state.metadata[metadata_key] = result
+        state.metadata["diagnostic"] = result
 
         return state
 

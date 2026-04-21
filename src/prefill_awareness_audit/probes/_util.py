@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import random
 from enum import Enum
 from typing import TypeVar
 
@@ -17,7 +19,9 @@ from inspect_ai.model import (
 )
 from inspect_ai.solver import TaskState
 
-from .prompts import LATENT_JUDGE_SCHEMA, LatentCategory
+# ``prompts`` imports are kept lazy (inside ``classify_judgement``) so this
+# module can be imported from ``prompts.py`` without a cycle — the RNG
+# helpers below are shared infrastructure that ``prompts.py`` calls into.
 
 logger = logging.getLogger(__name__)
 
@@ -30,11 +34,23 @@ def per_sample_seed(sample_id: str, base_seed: int = 42) -> int:
     All probes that present ordered options to the subject model (MCQ
     letter shuffle, awareness polarity flip, diagnostic tag shuffle)
     share this seed formula so re-running the same eval produces
-    byte-identical prompts per sample.  ``base_seed`` is overridable
-    per-probe for independent randomness across probes on the same
-    sample.
+    byte-identical prompts per sample across runs and processes.
+    ``base_seed`` is overridable per-probe for independent randomness
+    across probes on the same sample.
+
+    Uses SHA-1 over the sample id rather than builtin ``hash()`` — the
+    latter is PEP 456 process-salted, so byte-identical reproducibility
+    would only hold within a single interpreter.  ``sample_id`` is
+    stringified before hashing so Inspect's ``str | int`` sample ids
+    are both accepted.
     """
-    return base_seed + hash(sample_id)
+    digest = hashlib.sha1(str(sample_id).encode("utf-8")).digest()
+    return base_seed + int.from_bytes(digest[:8], "big", signed=False)
+
+
+def per_sample_rng(sample_id: str, base_seed: int = 42) -> random.Random:
+    """Per-sample deterministic RNG seeded via :func:`per_sample_seed`."""
+    return random.Random(per_sample_seed(sample_id, base_seed))
 
 
 def coerce_enum(value: object, enum_cls: type[_E]) -> _E | None:
@@ -132,7 +148,7 @@ async def classify_judgement(
     response: str,
     template: str,
     judge_model: str,
-) -> LatentCategory | None:
+) -> "LatentCategory | None":
     """Classify a probe response through the fixed LLM judge.
 
     Shared by ``reflection_probe`` and ``persona_probe``.  Uses
@@ -149,6 +165,8 @@ async def classify_judgement(
         A :class:`LatentCategory` on success, ``None`` on parse failure
         or judge error.
     """
+    from .prompts import LATENT_JUDGE_SCHEMA, LatentCategory
+
     model = get_model(judge_model)
     prompt = template.format(response=response)
     messages = [ChatMessageUser(content=prompt)]

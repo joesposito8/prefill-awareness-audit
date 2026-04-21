@@ -8,7 +8,6 @@ from .data import (
     load_conversations,
     load_from_eval_log,
 )
-from .probes.prompts import CONTINUATION_AWARENESS_QUESTION, DEFAULT_AWARENESS_QUESTION
 from .task_factory import continuation_audit, make_audit_task
 from .types import (
     AuditProfile,
@@ -30,9 +29,6 @@ __all__ = [
     "find_eval_log",
     "all_assistant_turns",
     "latest_assistant_block",
-    # Prompts (exposed for consumers building custom probe configurations)
-    "DEFAULT_AWARENESS_QUESTION",
-    "CONTINUATION_AWARENESS_QUESTION",
     # Types
     "AuditProfile",
     "AuditTarget",

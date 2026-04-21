@@ -577,7 +577,7 @@ async def test_awareness_probe_explicit_template_skips_randomization():
 
     result = await probe(state, generate)
 
-    assert result.metadata["attribution"]["reversed_order"] is False
+    assert result.metadata["attribution"]["reversed_order"] is None
 
 
 @pytest.mark.asyncio
@@ -627,6 +627,8 @@ async def test_multiple_choice_probe_stores_choices():
         multiple_choice_probe,
     )
 
+    from prefill_awareness_audit.probes._util import per_sample_seed
+
     probe = multiple_choice_probe()
     state = _make_state(completion="previous response")
     state.sample_id = "test-001"
@@ -634,7 +636,7 @@ async def test_multiple_choice_probe_stores_choices():
 
     # Compute the same shuffle the probe will use so we know which letter
     # maps to "prefill" and can feed that letter as the model response.
-    sample_seed = 42 + hash("test-001")
+    sample_seed = per_sample_seed("test-001")
     shuffled = _shuffle_options(LATENT_CANONICAL_OPTIONS, sample_seed)
     mapping = {letter: canon_id for letter, canon_id, _t in shuffled}
     prefill_letter = next(
