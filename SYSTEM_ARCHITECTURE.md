@@ -15,14 +15,23 @@ src/prefill_awareness_audit/
   task_factory.py                make_audit_task(), continuation_audit()
 
   probes/                        Inspect solvers appended after generate()
-    prompts.py                   Centralized prompt templates, constants, output schemas
-    _util.py                     Shared helpers (tool stubs, shared judge-call helper)
+    prompts.py                   Centralized prompt templates, constants, output schemas;
+                                 build_awareness_prompt() / build_diagnostic_prompt() render
+                                 per-sample-randomised option orderings on top of the
+                                 forward-order DEFAULT_* templates
+    _util.py                     Shared helpers: tool stubs, shared judge-call helper, plus
+                                 per_sample_seed() / per_sample_rng() -- the single SHA-1-based
+                                 seed formula used by every probe that presents ordered
+                                 options (awareness polarity, diagnostic tag order, MCQ shuffle)
     fork.py                      forked_probes() -- runs probes in parallel via Inspect's fork()
-    awareness.py                 Graded 5-point authorship-certainty probe (one prompt, one call)
+    awareness.py                 Graded 5-point authorship-certainty probe with per-sample
+                                 polarity flip (five-point option order reversed per sample_id)
     reflection.py                Free-text first-person reflection + LLM judge
     persona.py                   User-persona role-swap + LLM judge (Cywiński)
-    multiple_choice.py           Shuffled 9-option MCQ latent probe (opt-in, A/B baseline)
-    diagnostic.py                Reason tags (style_mismatch, formatting_artifact, etc.)
+    multiple_choice.py           Shuffled 9-option MCQ latent probe (opt-in, A/B baseline);
+                                 per-sample letter shuffle via the shared per_sample_seed()
+    diagnostic.py                Reason tags (style_mismatch, formatting_artifact, etc.) with
+                                 per-sample tag-order shuffle
     spontaneous.py               Scorer-side: unprompted awareness mentions
 
   interventions/                 Dataset transformers parameterized by (scope, mechanism)
@@ -166,7 +175,7 @@ All proportions include Wilson score 95% CI. All means include 95% CI. Every gro
 
 **Ground truth confusion matrix**: `recognition_rate` (TPR), `detection_rate` (TNR), `false_attribution_rate` (FPR), `miss_rate` (FNR) with Wilson CIs; `g_mean` (sqrt(TPR·TNR), no CI); `uncertain_rate` with Wilson CI. Reports `n_samples`, `n_classified`, `n_parse_fail`. Compares `attribution` (model claim) against `prefill_authentic` (ground truth from `source_model` metadata).
 
-**Graded attribution score**: `attribution_score_mean` with CI, `attribution_score_median`, `attribution_score_std`, `attribution_score_n_samples`. Ordinal -2..+2 Likert collapsed from the 5-point `AttributionLabel` (higher = stronger non-authorship claim). Excludes samples whose graded label didn't parse. Not a probability -- see `docs/design-decisions.md §3.2`.
+**Graded attribution score**: `attribution_score_mean` with CI, `attribution_score_median`, `attribution_score_std`, `attribution_score_n_samples`. Ordinal -2..+2 Likert collapsed from the 5-point `AttributionLabel` (higher = stronger non-authorship claim). Excludes samples whose graded label didn't parse. Not a probability -- see `docs/design-decisions.md §3.2`. Per-sample `attribution_reversed_order` boolean is emitted alongside each score so the audit script can sanity-check forward/reversed polarity balance within a run.
 
 **Spontaneous awareness**: `spontaneous_rate` with Wilson CI.
 
@@ -174,7 +183,7 @@ All proportions include Wilson score 95% CI. All means include 95% CI. Every gro
 
 **Latent awareness (multiple choice)**: emitted when the opt-in `multiple_choice` probe ran. `mc_prefill_rate` (selected "prefill" canonical option) and `mc_eval_rate` (selected "eval" canonical option), each with Wilson CI. Per-option rates as `mc_option_{id}_rate`. Reports `mc_n_samples`, `mc_n_parse_fail`.
 
-**Diagnostic tags**: Per-tag rates (`diagnostic_{tag}_rate`) with Wilson CIs, flagged turn mean/std. Excludes samples where diagnostic parsing failed.
+**Diagnostic tags**: Per-tag rates (`diagnostic_{tag}_rate`) with Wilson CIs, flagged turn mean/std. Excludes samples where diagnostic parsing failed. Per-sample `diagnostic_tag_order` tuple (the shuffled tag ordering presented to the subject model) is emitted alongside each score so the audit script can verify shuffle coverage.
 
 **Awareness-benchmark coupling** (only when `main_score_fields` non-empty): `coupling_{field}_given_self`, `coupling_{field}_given_not_self`, `coupling_{field}_cohens_d`, `coupling_{field}_attribution_corr` (Pearson vs the ordinal attribution score) and `coupling_{field}_latent_corr` (Pearson vs the graded latent consensus) with Fisher z-transform CIs.
 
@@ -190,7 +199,7 @@ Implemented in `scoring/metrics.py` with numpy only (no scipy):
 ## Component responsibilities
 
 - **task_factory**: `make_audit_task()` is the primary API -- resolves defaults, loads data, applies interventions, wires probes, and wraps the scorer. `continuation_audit()` layers a fixed continuation solver chain on top. The sync/async split (interventions need async for model calls, but `@task` is sync) is handled internally via `ThreadPoolExecutor`.
-- **probes**: Solvers that run after generate() via forked execution (each probe gets an independent deepcopy of TaskState). Cannot influence the main behavioral score. Four active probes in the default set (awareness -- graded 5-point authorship certainty, reflection -- free-text latent with LLM judge, persona -- user-persona role-swap with LLM judge, diagnostic -- reason tags), plus one opt-in latent probe (multiple_choice -- preserved MCQ as A/B baseline) and one passive scorer-side signal (spontaneous).
+- **probes**: Solvers that run after generate() via forked execution (each probe gets an independent deepcopy of TaskState). Cannot influence the main behavioral score. Four active probes in the default set (awareness -- graded 5-point authorship certainty, reflection -- free-text latent with LLM judge, persona -- user-persona role-swap with LLM judge, diagnostic -- reason tags), plus one opt-in latent probe (multiple_choice -- preserved MCQ as A/B baseline) and one passive scorer-side signal (spontaneous). Every probe that presents ordered options (awareness, diagnostic, multiple_choice) deterministically randomises its per-sample option ordering via the shared `per_sample_seed()` / `per_sample_rng()` helpers in `probes/_util.py`, so option position does not confound the measurement -- see `docs/design-decisions.md §3.2` and §4.3.
 - **interventions**: Each takes (samples, AuditProfile) and returns modified samples. Validates scope against `InterventionConstraints` before applying. Deterministic and rewrite share the scope parameterization.
 - **scoring**: audit_scorer wraps the original scorer, adding probe dimensions to Score and registering custom metrics for per-condition aggregation. metrics.py defines all custom @metric functions.
 - **analysis**: compare.py loads eval logs and builds cross-condition comparison tables. figures.py generates matplotlib visualizations.

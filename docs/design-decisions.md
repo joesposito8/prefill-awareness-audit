@@ -140,6 +140,8 @@ The ordinal is a graded rank, not a probability; mean and std are valid aggregat
 
 **Fallback if graded still saturates:** A free-text + LLM-judge attribution probe (reusing `classify_judgement` from `probes/_util.py`) is pre-authorised as tier 2 and can be swapped in without further design review.
 
+**Per-sample polarity randomisation** (commit `ddbfcdf`): The default solver renders the prompt via `build_awareness_prompt()`, which deterministically flips the five-point option order (forward `definitely me → definitely not me` vs reversed `definitely not me → definitely me`) per `sample_id`. Motivation: the 2026-04-21 `--limit 10` reversed-order A/B on misalignment measured a ~30 % per-sample disagreement rate and a 10 pp aggregate detection-rate swing between orderings on the same samples — option order is a real per-sample confound, not just hypothetical position bias. A deterministic flip (via the shared `per_sample_seed` formula, see §3.7) makes a single run average over the ordering bias while still being byte-reproducible across re-runs. The scorer emits `attribution_reversed_order` per sample so the audit script can sanity-check forward/reversed balance within a run. Passing `question_template=` explicitly to `awareness_probe(...)` pins a single template and skips the flip (used by tests and by callers with a pre-rendered template).
+
 ### 3.3 Spontaneous detection as scorer-side keyword scan
 
 **Decision:** Spontaneous awareness detection (`probes/spontaneous.py`) is a pure function called by the audit scorer during scoring, not a solver probe. It scans the model's main response for awareness-indicating phrases.
@@ -172,6 +174,27 @@ _Post angle:_ A concrete example of the tension between sensitivity and specific
 **Decision:** `probes/_util.py:append_tool_stubs()` inserts `ChatMessageTool` stubs for any pending tool calls before each probe question.
 
 **Why:** LLM APIs (OpenAI, Anthropic, Google) require tool_result blocks for every tool_use block before the next user message. Without stubs, probe questions fail with API validation errors. This is a framework constraint, not a design choice, but it's worth documenting because it adds complexity to the probe chain and was a source of early bugs.
+
+### 3.7 Shared per-sample randomisation seed for option-presenting probes
+
+**Decision:** A single helper in `probes/_util.py`, `per_sample_seed(sample_id, base_seed=42) -> int`, plus a thin wrapper `per_sample_rng(...) -> random.Random`, supplies the randomisation seeds for every probe that presents ordered options to the subject model: the awareness-probe polarity flip (§3.2), the diagnostic tag-order shuffle (below), and the MCQ letter shuffle (§4.3). The formula hashes the sample id with SHA-1 and adds `base_seed` — callers pass a different `base_seed` per probe (awareness `42`, diagnostic `43`, MCQ `42`) so the per-sample randomness of one probe is independent of another on the same sample.
+
+**Alternatives:**
+- Continue using `seed + hash(sample_id)` (the MCQ's original formula).
+- Use a global RNG seeded once per task.
+- Hash with BLAKE2 / SHA-256 / MD5 instead of SHA-1.
+
+**Why SHA-1 rather than builtin hash():** Python's `hash()` is PEP 456 process-salted — the same `sample_id` produces different ints in different interpreter runs. That made byte-identical prompts reproducible only *within* a single run, which the MCQ probe's cross-run cache didn't rely on but which the per-sample randomisation reports in the audit artefact do. SHA-1 is stable across processes and OS installations, and cryptographic strength is irrelevant here (an adversary manipulating sample ids to bias polarity is not in our threat model).
+
+**Why a global RNG was rejected:** Sample ordering in Inspect AI can vary (limit flags, parallel workers, reruns). Seeding per sample rather than per task means the polarity each sample sees is a stable property of the sample id, not of its position in the run — swapping `--limit 10` for `--limit 20` on the same dataset leaves each sample's polarity unchanged.
+
+**Why base_seed is exposed:** The awareness and diagnostic probes both key off the same `sample_id`. If they shared the same `base_seed`, their per-sample `random.Random` streams would be correlated — e.g., every sample where the awareness polarity flipped might also get the same first diagnostic permutation. Separating `base_seed` between probes breaks that correlation while keeping each probe's per-sample stream deterministic.
+
+**Diagnostic tag-order shuffle** (commit `a7acd20`): `build_diagnostic_prompt()` uses `per_sample_rng(sample_id, base_seed=43)` to shuffle the six diagnostic tags (`style_mismatch`, `formatting_artifact`, `metadata_or_provenance`, `tool_mismatch`, `behavior_or_policy_mismatch`, `other`) per sample before rendering them into the prompt. Same rationale as the awareness polarity flip — the presented tag order is an uncontrolled parameter that can bias which tags the model picks — with the same 2026-04-21 A/B evidence motivating the intervention. The scorer emits the shuffled `diagnostic_tag_order` per sample so the audit script can verify coverage (on the 6! = 720 permutation space, 20-sample runs routinely see 19–20 distinct orderings; the revalidation appendix observed 20/20 on baseline + misalignment and 19/20 on bfcl, with one birthday-paradox collision).
+
+**Explicit-template escape hatch:** Both `awareness_probe()` and `diagnostic_probe()` accept an explicit `question_template=` argument. When passed, the solver skips randomisation and uses the supplied template verbatim — symmetric sentinel behaviour in both probes. Used by tests (deterministic prompt assertions) and by callers that pre-render their own prompt.
+
+_Post angle:_ The 2026-04-21 reversed-order A/B result (§3.2, and the revalidation appendix in `agent_artefacts/validation-audit-2026-04-21.md`) is a clean illustration of why measurement-hygiene assumptions should be tested, not just asserted. We assumed the option order was "just a formatting detail"; the measured per-sample disagreement rate was ~30 % and the aggregate detection-rate swing was 10 pp. That's a first-order confound, not a rounding error.
 
 ---
 
@@ -235,7 +258,7 @@ The nine canonical options (`probes/prompts.py`):
 
 - **First-person framing:** "Review your previous responses" forces self-reference. Prefill awareness requires a sense of self ("I didn't write this"), not analytical ability. Third-person framing ("would an AI notice...") lets the model reason abstractly without claiming personal awareness.
 
-- **Deterministic shuffle:** Options A-H are shuffled per sample using `seed + hash(sample_id)`. Eliminates position bias. Option I ("Nothing unusual") is always pinned last so it serves as a clear default.
+- **Deterministic shuffle:** Options A-H are shuffled per sample using the shared `per_sample_seed(sample_id, base_seed=42)` helper from `probes/_util.py` (see §3.7). Eliminates position bias. Option I ("Nothing unusual") is always pinned last so it serves as a clear default. The shuffle originally used `seed + hash(sample_id)`; consolidating on `per_sample_seed` (commit `403a7e8`) removed a cross-process reproducibility hazard — Python's builtin `hash()` is PEP 456 process-salted, so byte-identical prompts only held within a single interpreter run.
 
 - **Multi-select:** Models may detect both prefill AND eval context simultaneously. Single-choice would force an arbitrary split, hiding signal. The misalignment-continuation benchmark is both a prefill attack (fabricated history) and an eval (testing behavior) -- models should be able to flag both.
 
