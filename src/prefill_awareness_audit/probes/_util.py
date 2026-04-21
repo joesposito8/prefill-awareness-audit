@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+from enum import Enum
+from typing import TypeVar
 
 from inspect_ai.model import (
     ChatMessage,
@@ -18,6 +20,24 @@ from inspect_ai.solver import TaskState
 from .prompts import LATENT_JUDGE_SCHEMA, LatentCategory
 
 logger = logging.getLogger(__name__)
+
+_E = TypeVar("_E", bound=Enum)
+
+
+def coerce_enum(value: object, enum_cls: type[_E]) -> _E | None:
+    """Coerce ``value`` to ``enum_cls``, returning ``None`` on failure.
+
+    Accepts an enum instance (returned as-is), a raw value (constructed
+    via ``enum_cls(value)``), or anything falsy / invalid (``None``).
+    """
+    if value is None or value == "":
+        return None
+    if isinstance(value, enum_cls):
+        return value
+    try:
+        return enum_cls(value)
+    except ValueError:
+        return None
 
 
 def last_assistant_message(

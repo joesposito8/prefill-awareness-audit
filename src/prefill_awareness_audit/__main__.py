@@ -43,15 +43,17 @@ def main() -> None:
 
         if args.figures:
             from .analysis.figures import (
+                plot_attribution_score_distribution,
                 plot_awareness_by_condition,
-                plot_confidence_distribution,
                 plot_delta_heatmap,
             )
 
             out = args.output_dir or args.log_dir / "figures"
             out.mkdir(parents=True, exist_ok=True)
             plot_awareness_by_condition(table, out / "awareness_by_condition.png")
-            plot_confidence_distribution(table, out / "confidence_distribution.png")
+            plot_attribution_score_distribution(
+                table, out / "attribution_score_distribution.png"
+            )
             plot_delta_heatmap(table, out / "delta_heatmap.png")
             print(f"\nFigures saved to {out}/")
     else:

@@ -13,7 +13,7 @@ from prefill_awareness_audit.scoring.metrics import (
     _fisher_z_ci,
     _mean_ci,
     _wilson_ci,
-    confidence_stats,
+    attribution_score_stats,
     coupling_metrics,
     diagnostic_tag_rates,
     ground_truth_metrics,
@@ -155,33 +155,33 @@ class TestGroundTruthMetrics:
 
 
 # ---------------------------------------------------------------------------
-# Confidence stats
+# Attribution ordinal stats
 # ---------------------------------------------------------------------------
 
 
-class TestConfidenceStats:
+class TestAttributionScoreStats:
     def test_basic(self):
-        scores = [_ss({"prefill_confidence": v}) for v in [40, 60, 80]]
-        result = confidence_stats()(scores)
-        assert result["confidence_mean"] == pytest.approx(60.0)
-        assert result["confidence_median"] == pytest.approx(60.0)
-        assert result["confidence_n_samples"] == 3.0
+        scores = [_ss({"attribution_score": v}) for v in [-2, 0, 2]]
+        result = attribution_score_stats()(scores)
+        assert result["attribution_score_mean"] == pytest.approx(0.0)
+        assert result["attribution_score_median"] == pytest.approx(0.0)
+        assert result["attribution_score_n_samples"] == 3.0
 
     def test_none_excluded(self):
         scores = [
-            _ss({"prefill_confidence": 50}),
-            _ss({"prefill_confidence": None}),
-            _ss({"prefill_confidence": 70}),
+            _ss({"attribution_score": -1}),
+            _ss({"attribution_score": None}),
+            _ss({"attribution_score": 1}),
         ]
-        result = confidence_stats()(scores)
-        assert result["confidence_mean"] == pytest.approx(60.0)
-        assert result["confidence_n_samples"] == 2.0
+        result = attribution_score_stats()(scores)
+        assert result["attribution_score_mean"] == pytest.approx(0.0)
+        assert result["attribution_score_n_samples"] == 2.0
 
     def test_all_none(self):
-        scores = [_ss({"prefill_confidence": None}) for _ in range(5)]
-        result = confidence_stats()(scores)
-        assert math.isnan(result["confidence_mean"])
-        assert result["confidence_n_samples"] == 0.0
+        scores = [_ss({"attribution_score": None}) for _ in range(5)]
+        result = attribution_score_stats()(scores)
+        assert math.isnan(result["attribution_score_mean"])
+        assert result["attribution_score_n_samples"] == 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -421,10 +421,10 @@ class TestDiagnosticTagRates:
 class TestCouplingMetrics:
     def test_conditional_means(self):
         scores = [
-            _ss({"attribution": "self", "aligned": 0.9, "prefill_confidence": 20}),
-            _ss({"attribution": "self", "aligned": 0.8, "prefill_confidence": 30}),
-            _ss({"attribution": "not_self", "aligned": 0.5, "prefill_confidence": 80}),
-            _ss({"attribution": "not_self", "aligned": 0.6, "prefill_confidence": 70}),
+            _ss({"attribution": "self", "aligned": 0.9, "attribution_score": -2}),
+            _ss({"attribution": "self", "aligned": 0.8, "attribution_score": -1}),
+            _ss({"attribution": "not_self", "aligned": 0.5, "attribution_score": 2}),
+            _ss({"attribution": "not_self", "aligned": 0.6, "attribution_score": 1}),
         ]
         result = coupling_metrics(["aligned"])(scores)
         assert result["coupling_aligned_given_self"] == pytest.approx(0.85)
@@ -433,44 +433,44 @@ class TestCouplingMetrics:
 
     def test_cohens_d(self):
         scores = [
-            _ss({"attribution": "self", "aligned": 0.9, "prefill_confidence": 20}),
-            _ss({"attribution": "self", "aligned": 0.8, "prefill_confidence": 30}),
-            _ss({"attribution": "self", "aligned": 0.85, "prefill_confidence": 25}),
-            _ss({"attribution": "not_self", "aligned": 0.5, "prefill_confidence": 80}),
-            _ss({"attribution": "not_self", "aligned": 0.6, "prefill_confidence": 70}),
-            _ss({"attribution": "not_self", "aligned": 0.55, "prefill_confidence": 75}),
+            _ss({"attribution": "self", "aligned": 0.9, "attribution_score": -2}),
+            _ss({"attribution": "self", "aligned": 0.8, "attribution_score": -1}),
+            _ss({"attribution": "self", "aligned": 0.85, "attribution_score": -2}),
+            _ss({"attribution": "not_self", "aligned": 0.5, "attribution_score": 2}),
+            _ss({"attribution": "not_self", "aligned": 0.6, "attribution_score": 1}),
+            _ss({"attribution": "not_self", "aligned": 0.55, "attribution_score": 2}),
         ]
         result = coupling_metrics(["aligned"])(scores)
         # Large positive d (self group has higher scores)
         assert result["coupling_aligned_cohens_d"] > 1.0
 
     def test_correlation_with_ci(self):
-        # Negative correlation: higher confidence -> lower score
+        # Negative correlation: higher attribution_score (leans not-me) -> lower score
         scores = [
-            _ss({"attribution": "self", "score": 0.9, "prefill_confidence": 10}),
-            _ss({"attribution": "not_self", "score": 0.5, "prefill_confidence": 50}),
-            _ss({"attribution": "not_self", "score": 0.2, "prefill_confidence": 90}),
-            _ss({"attribution": "not_self", "score": 0.3, "prefill_confidence": 80}),
-            _ss({"attribution": "self", "score": 0.8, "prefill_confidence": 20}),
+            _ss({"attribution": "self", "score": 0.9, "attribution_score": -2}),
+            _ss({"attribution": "not_self", "score": 0.5, "attribution_score": 0}),
+            _ss({"attribution": "not_self", "score": 0.2, "attribution_score": 2}),
+            _ss({"attribution": "not_self", "score": 0.3, "attribution_score": 1}),
+            _ss({"attribution": "self", "score": 0.8, "attribution_score": -1}),
         ]
         result = coupling_metrics(["score"])(scores)
-        assert result["coupling_score_confidence_corr"] < 0
-        assert result["coupling_score_confidence_corr_ci_lo"] < result["coupling_score_confidence_corr"]
-        assert result["coupling_score_confidence_corr_ci_hi"] > result["coupling_score_confidence_corr"]
+        assert result["coupling_score_attribution_corr"] < 0
+        assert result["coupling_score_attribution_corr_ci_lo"] < result["coupling_score_attribution_corr"]
+        assert result["coupling_score_attribution_corr_ci_hi"] > result["coupling_score_attribution_corr"]
 
     def test_insufficient_for_correlation(self):
         scores = [
-            _ss({"attribution": "self", "aligned": 0.9, "prefill_confidence": 20}),
-            _ss({"attribution": "not_self", "aligned": 0.5, "prefill_confidence": 80}),
+            _ss({"attribution": "self", "aligned": 0.9, "attribution_score": -2}),
+            _ss({"attribution": "not_self", "aligned": 0.5, "attribution_score": 2}),
         ]
         result = coupling_metrics(["aligned"])(scores)
-        assert math.isnan(result["coupling_aligned_confidence_corr"])
-        assert math.isnan(result["coupling_aligned_confidence_corr_ci_lo"])
+        assert math.isnan(result["coupling_aligned_attribution_corr"])
+        assert math.isnan(result["coupling_aligned_attribution_corr_ci_lo"])
 
     def test_parse_failures_excluded(self):
         scores = [
-            _ss({"attribution": "self", "aligned": 0.9, "prefill_confidence": 20}),
-            _ss({"attribution": None, "aligned": 0.5, "prefill_confidence": 80}),  # parse failure
+            _ss({"attribution": "self", "aligned": 0.9, "attribution_score": -2}),
+            _ss({"attribution": None, "aligned": 0.5, "attribution_score": None}),  # parse failure
         ]
         result = coupling_metrics(["aligned"])(scores)
         assert result["coupling_aligned_given_self"] == pytest.approx(0.9)
@@ -479,9 +479,9 @@ class TestCouplingMetrics:
 
     def test_multiple_fields(self):
         scores = [
-            _ss({"attribution": "self", "aligned": 0.9, "confession": 0.1, "prefill_confidence": 20}),
-            _ss({"attribution": "not_self", "aligned": 0.5, "confession": 0.4, "prefill_confidence": 80}),
-            _ss({"attribution": "not_self", "aligned": 0.6, "confession": 0.3, "prefill_confidence": 70}),
+            _ss({"attribution": "self", "aligned": 0.9, "confession": 0.1, "attribution_score": -2}),
+            _ss({"attribution": "not_self", "aligned": 0.5, "confession": 0.4, "attribution_score": 2}),
+            _ss({"attribution": "not_self", "aligned": 0.6, "confession": 0.3, "attribution_score": 1}),
         ]
         result = coupling_metrics(["aligned", "confession"])(scores)
         assert "coupling_aligned_given_self" in result

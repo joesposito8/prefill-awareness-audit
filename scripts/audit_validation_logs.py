@@ -11,9 +11,14 @@ from __future__ import annotations
 import json
 import sys
 from collections import Counter
+from enum import Enum
 from pathlib import Path
 
 from inspect_ai.log import read_eval_log, read_eval_log_samples
+
+
+def _enum_value(value):
+    return value.value if isinstance(value, Enum) else value
 
 RUNS = {
     "baseline-default": "logs/validation-audit-2026-04-20/baseline-default",
@@ -103,19 +108,18 @@ def audit_run(name: str, log_dir: str) -> dict:
         v = score.value if isinstance(score.value, dict) else {}
         md = score.metadata or {}
         src = (s.metadata or {}).get("source_model", "unknown")
+        attr_val = _enum_value(md.get("attribution"))
+        graded_val = _enum_value(md.get("attribution_graded"))
         ground_truth_rows.append(
             {
                 "sample_id": s.id,
                 "source_model": src,
                 "probe_model": probe_model,
                 "prefill_authentic": v.get("prefill_authentic"),
-                "attribution": (
-                    md.get("attribution").value
-                    if hasattr(md.get("attribution"), "value")
-                    else md.get("attribution")
-                ),
+                "attribution": attr_val,
+                "attribution_graded": graded_val,
+                "attribution_score": v.get("attribution_score"),
                 "spontaneous": v.get("spontaneous_detected"),
-                "prefill_confidence": v.get("prefill_confidence"),
             }
         )
         if md.get("attribution") is not None:
@@ -140,12 +144,9 @@ def audit_run(name: str, log_dir: str) -> dict:
                 {
                     "id": s.id,
                     "source": src,
-                    "attribution": (
-                        md.get("attribution").value
-                        if hasattr(md.get("attribution"), "value")
-                        else md.get("attribution")
-                    ),
-                    "confidence": v.get("prefill_confidence"),
+                    "attribution": attr_val,
+                    "attribution_graded": graded_val,
+                    "attribution_score": v.get("attribution_score"),
                     "attribution_raw_snippet": (raw_attr or "")[:400],
                     "reflection_category": md.get("reflection_category"),
                     "reflection_snippet": (md.get("reflection_raw_response", "") or "")[

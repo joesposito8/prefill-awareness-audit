@@ -60,34 +60,35 @@ def plot_awareness_by_condition(
     plt.close(fig)
 
 
-def plot_confidence_distribution(
+def plot_attribution_score_distribution(
     table: ComparisonTable, output_path: str | Path
 ) -> None:
-    """Bar chart of mean confidence per condition with CI error bars.
+    """Bar chart of mean attribution ordinal per condition with CI error bars.
 
-    For a full box plot, sample-level data would be needed via
-    read_eval_log(header_only=False).
+    The attribution score is a -2..+2 Likert rank (higher = stronger
+    non-authorship claim), not a probability.
     """
     conditions = table.conditions
     labels = [s.condition.value for s in conditions]
-    means = [s.metrics.get("confidence_mean", 0) for s in conditions]
+    means = [s.metrics.get("attribution_score_mean", 0) for s in conditions]
 
     lo_errs = []
     hi_errs = []
     for i, s in enumerate(conditions):
-        lo = s.metrics.get("confidence_mean_ci_lo", means[i])
-        hi = s.metrics.get("confidence_mean_ci_hi", means[i])
+        lo = s.metrics.get("attribution_score_mean_ci_lo", means[i])
+        hi = s.metrics.get("attribution_score_mean_ci_hi", means[i])
         lo_errs.append(means[i] - lo)
         hi_errs.append(hi - means[i])
 
     fig, ax = plt.subplots(figsize=(max(8, len(conditions) * 1.5), 5))
     x = np.arange(len(conditions))
     ax.bar(x, means, yerr=[lo_errs, hi_errs], capsize=5)
-    ax.set_ylabel("Tamper Confidence (0-100)")
-    ax.set_title("Mean Tamper Confidence by Condition")
+    ax.axhline(0, color="black", linewidth=0.5)
+    ax.set_ylabel("Attribution score (-2..+2 Likert)")
+    ax.set_title("Mean Attribution Score by Condition")
     ax.set_xticks(x)
     ax.set_xticklabels(labels, rotation=30, ha="right")
-    ax.set_ylim(0, 105)
+    ax.set_ylim(-2.1, 2.1)
     fig.tight_layout()
     fig.savefig(str(output_path), dpi=150)
     plt.close(fig)
@@ -105,7 +106,7 @@ def plot_delta_heatmap(
         "detection_rate",
         "false_attribution_rate",
         "g_mean",
-        "confidence_mean",
+        "attribution_score_mean",
         "spontaneous_rate",
         "latent_prefill_rate",
         "latent_any_awareness_rate",

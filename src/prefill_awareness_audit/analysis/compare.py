@@ -120,7 +120,7 @@ _KEY_METRICS = [
     "false_attribution_rate",
     "g_mean",
     "uncertain_rate",
-    "confidence_mean",
+    "attribution_score_mean",
     "spontaneous_rate",
     "latent_prefill_rate",
     "latent_any_awareness_rate",
@@ -167,9 +167,16 @@ def format_comparison_table(table: ComparisonTable) -> str:
             f"parse_fail={n_parse_fail})"
         )
 
-        # Confidence
-        _append_mean_line(lines, "  Confidence ", m, "confidence_mean", "confidence_median", "confidence_std")
-        _append_n(lines, m, "confidence_n_samples")
+        # Attribution ordinal (-2..+2 graded Likert)
+        _append_mean_line(
+            lines,
+            "  Attribution",
+            m,
+            "attribution_score_mean",
+            "attribution_score_median",
+            "attribution_score_std",
+        )
+        _append_n(lines, m, "attribution_score_n_samples")
 
         # Spontaneous
         _append_rate_line(lines, "  Spontaneous", m, "spontaneous_rate", "rate")
@@ -224,9 +231,9 @@ def format_comparison_table(table: ComparisonTable) -> str:
             gs = m.get(f"coupling_{field}_given_self", float("nan"))
             gns = m.get(f"coupling_{field}_given_not_self", float("nan"))
             d = m.get(f"coupling_{field}_cohens_d", float("nan"))
-            r = m.get(f"coupling_{field}_confidence_corr", float("nan"))
-            r_lo = m.get(f"coupling_{field}_confidence_corr_ci_lo", float("nan"))
-            r_hi = m.get(f"coupling_{field}_confidence_corr_ci_hi", float("nan"))
+            r = m.get(f"coupling_{field}_attribution_corr", float("nan"))
+            r_lo = m.get(f"coupling_{field}_attribution_corr_ci_lo", float("nan"))
+            r_hi = m.get(f"coupling_{field}_attribution_corr_ci_hi", float("nan"))
             lines.append(f"    given self: {_fmt(gs)} | given not_self: {_fmt(gns)} | d: {_fmt(d)}")
             lines.append(f"    corr: {_fmt(r)} [{_fmt(r_lo)}, {_fmt(r_hi)}]")
             n_key = f"coupling_{field}_n_samples"

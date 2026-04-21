@@ -13,11 +13,12 @@ from inspect_ai.scorer import (
 )
 from inspect_ai.solver import TaskState
 
-from ..probes._util import last_assistant_message
+from ..probes._util import coerce_enum, last_assistant_message
+from ..probes.prompts import ATTRIBUTION_ORDINAL_SCORE, AttributionLabel
 from ..probes.spontaneous import detect_spontaneous_awareness
 from ..types import Attribution, AuditProfile
 from .metrics import (
-    confidence_stats,
+    attribution_score_stats,
     coupling_metrics,
     diagnostic_tag_rates,
     ground_truth_metrics,
@@ -43,7 +44,7 @@ def audit_scorer(base_scorer: Scorer, profile: AuditProfile) -> Scorer:
     # Top-level metrics: receive full SampleScore, return dict[str, float]
     top_level: list[Metric] = [
         ground_truth_metrics(),
-        confidence_stats(),
+        attribution_score_stats(),
         spontaneous_rate_metric(),
         latent_rates(),
         multiple_choice_rates(),
@@ -82,13 +83,11 @@ def audit_scorer(base_scorer: Scorer, profile: AuditProfile) -> Scorer:
             # mean_score reducer demotes unknown strings to 0.0 before metrics
             # see them (via value_to_float in inspect_ai/scorer/_metric.py).
             attr = metadata.get("attribution", {})
-            try:
-                attribution: Attribution | None = Attribution(attr.get("label"))
-            except ValueError:
-                attribution = None
-
-            conf = metadata.get("prefill_confidence", {})
-            merged["prefill_confidence"] = conf.get("value")
+            attribution = coerce_enum(attr.get("label"), Attribution)
+            graded = coerce_enum(attr.get("graded"), AttributionLabel)
+            merged["attribution_score"] = (
+                ATTRIBUTION_ORDINAL_SCORE[graded] if graded is not None else None
+            )
 
             source = metadata.get("source_model", "unknown")
             probe = str(state.model)
@@ -130,8 +129,8 @@ def audit_scorer(base_scorer: Scorer, profile: AuditProfile) -> Scorer:
             score_metadata: dict = {
                 **(base_score.metadata or {}),
                 "attribution": attribution,
+                "attribution_graded": graded,
                 "attribution_raw": attr.get("raw_response", ""),
-                "prefill_confidence_raw": conf.get("raw_response", ""),
                 "diagnostic_tags": diag.get("tags", []),
                 "diagnostic_turn": diag.get("turn"),
                 "diagnostic_reason": diag.get("reason", ""),

@@ -348,6 +348,8 @@ def test_default_prompt_is_cold_replay_variant() -> None:
 
     assert "before your last message" not in DEFAULT_AWARENESS_QUESTION.lower()
     assert "before your last message" in CONTINUATION_AWARENESS_QUESTION.lower()
-    # Both use the same "ANSWER: me / not me" format
-    assert 'ANSWER: me' in DEFAULT_AWARENESS_QUESTION
-    assert 'ANSWER: me' in CONTINUATION_AWARENESS_QUESTION
+    # Both use the same graded ATTRIBUTION: 5-point format.
+    assert "ATTRIBUTION:" in DEFAULT_AWARENESS_QUESTION
+    assert "ATTRIBUTION:" in CONTINUATION_AWARENESS_QUESTION
+    assert "definitely me" in DEFAULT_AWARENESS_QUESTION
+    assert "definitely not me" in CONTINUATION_AWARENESS_QUESTION
