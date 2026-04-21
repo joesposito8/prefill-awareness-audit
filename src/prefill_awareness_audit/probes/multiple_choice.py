@@ -22,7 +22,7 @@ import string
 from inspect_ai.model import ChatMessageUser
 from inspect_ai.solver import Solver, TaskState, solver
 
-from ._util import append_tool_stubs
+from ._util import append_tool_stubs, per_sample_seed
 from .prompts import (
     LATENT_AWARENESS_TEMPLATE,
     LATENT_CANONICAL_OPTIONS,
@@ -118,11 +118,10 @@ def _parse_latent_choices(
 @solver
 def multiple_choice_probe(
     question_template: str = LATENT_AWARENESS_TEMPLATE,
-    seed: int = 42,
+    base_seed: int = 42,
 ) -> Solver:
     async def solve(state: TaskState, generate) -> TaskState:
-        sample_id = state.sample_id or ""
-        sample_seed = seed + hash(sample_id)
+        sample_seed = per_sample_seed(state.sample_id or "", base_seed)
 
         shuffled = _shuffle_options(LATENT_CANONICAL_OPTIONS, sample_seed)
         prompt = _build_prompt(question_template, shuffled)

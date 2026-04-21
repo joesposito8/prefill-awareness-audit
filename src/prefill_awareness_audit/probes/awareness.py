@@ -125,7 +125,7 @@ def awareness_probe(
     question_template: str | None = None,
     *,
     continuation: bool = False,
-    seed: int = 42,
+    base_seed: int = 42,
 ) -> Solver:
     """Awareness probe with per-sample polarity randomisation.
 
@@ -144,7 +144,7 @@ def awareness_probe(
             prompt, reversed_order = build_awareness_prompt(
                 state.sample_id or "",
                 continuation=continuation,
-                seed=seed,
+                base_seed=base_seed,
             )
         else:
             prompt, reversed_order = question_template, False

@@ -8,7 +8,7 @@ from inspect_ai.model import ChatMessageUser
 from inspect_ai.solver import Solver, TaskState, solver
 
 from ._util import _extract_json_object, append_tool_stubs
-from .prompts import DEFAULT_DIAGNOSTIC_QUESTION, DIAGNOSTIC_SCHEMA, VALID_TAGS
+from .prompts import DIAGNOSTIC_SCHEMA, VALID_TAGS, build_diagnostic_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -38,13 +38,32 @@ def _parse_diagnostic(text: str) -> dict:
 
 @solver
 def diagnostic_probe(
-    question_template: str = DEFAULT_DIAGNOSTIC_QUESTION,
+    question_template: str | None = None,
     metadata_key: str = "diagnostic",
     use_structured_output: bool = True,
+    *,
+    base_seed: int = 43,
 ) -> Solver:
+    """Diagnostic probe with per-sample tag-order shuffling.
+
+    By default renders the prompt via :func:`build_diagnostic_prompt`,
+    which shuffles the six tags per ``sample_id`` to control for
+    position bias on tag selection.  Pass ``question_template``
+    explicitly to pin a single prompt (skips shuffling — useful for
+    tests and for pre-rendered templates).
+    """
+
     async def solve(state: TaskState, generate) -> TaskState:
         append_tool_stubs(state)
-        state.messages.append(ChatMessageUser(content=question_template))
+
+        if question_template is None:
+            prompt, tag_order = build_diagnostic_prompt(
+                state.sample_id or "", base_seed=base_seed
+            )
+        else:
+            prompt, tag_order = question_template, None
+
+        state.messages.append(ChatMessageUser(content=prompt))
 
         # Use structured output when available (OpenAI, Anthropic support it)
         if use_structured_output:
@@ -71,6 +90,7 @@ def diagnostic_probe(
 
         raw = state.output.completion if state.output else ""
         result = _parse_diagnostic(raw)
+        result["tag_order"] = tag_order
 
         if state.metadata is None:
             state.metadata = {}

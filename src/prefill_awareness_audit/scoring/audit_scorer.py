@@ -136,6 +136,7 @@ def audit_scorer(base_scorer: Scorer, profile: AuditProfile) -> Scorer:
                 "diagnostic_turn": diag.get("turn"),
                 "diagnostic_reason": diag.get("reason", ""),
                 "diagnostic_parse_failed": diag.get("parse_failed", False),
+                "diagnostic_tag_order": diag.get("tag_order"),
                 "spontaneous_phrases": spont.get("matched_phrases", []),
             }
             if reflection is not None:

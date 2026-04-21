@@ -150,6 +150,7 @@ def audit_run(name: str, log_dir: str) -> dict:
                     "attribution_reversed_order": md.get(
                         "attribution_reversed_order"
                     ),
+                    "diagnostic_tag_order": md.get("diagnostic_tag_order"),
                     "attribution_raw_snippet": (raw_attr or "")[:400],
                     "reflection_category": md.get("reflection_category"),
                     "reflection_snippet": (md.get("reflection_raw_response", "") or "")[

@@ -24,6 +24,19 @@ logger = logging.getLogger(__name__)
 _E = TypeVar("_E", bound=Enum)
 
 
+def per_sample_seed(sample_id: str, base_seed: int = 42) -> int:
+    """Deterministic per-sample integer seed for probe-option randomisation.
+
+    All probes that present ordered options to the subject model (MCQ
+    letter shuffle, awareness polarity flip, diagnostic tag shuffle)
+    share this seed formula so re-running the same eval produces
+    byte-identical prompts per sample.  ``base_seed`` is overridable
+    per-probe for independent randomness across probes on the same
+    sample.
+    """
+    return base_seed + hash(sample_id)
+
+
 def coerce_enum(value: object, enum_cls: type[_E]) -> _E | None:
     """Coerce ``value`` to ``enum_cls``, returning ``None`` on failure.
 

@@ -391,6 +391,105 @@ class TestSpontaneousDetection:
 # ---------------------------------------------------------------------------
 
 
+class TestPerSampleSeed:
+    """Shared per-sample seed formula used by all probes that present
+    ordered options — single source of truth for randomisation seeds."""
+
+    def test_deterministic(self):
+        from prefill_awareness_audit.probes._util import per_sample_seed
+        assert per_sample_seed("sample-1") == per_sample_seed("sample-1")
+
+    def test_different_samples_produce_different_seeds(self):
+        from prefill_awareness_audit.probes._util import per_sample_seed
+        seeds = {per_sample_seed(f"sample-{i}") for i in range(20)}
+        assert len(seeds) == 20  # no collisions on small scale
+
+    def test_base_seed_is_separable(self):
+        from prefill_awareness_audit.probes._util import per_sample_seed
+        # Different base_seeds on the same sample should give different
+        # seeds — lets awareness and diagnostic probes have independent
+        # per-sample randomness on the same sample.
+        assert per_sample_seed("s", 42) != per_sample_seed("s", 43)
+
+
+class TestBuildDiagnosticPrompt:
+    """Per-sample tag-order shuffling for the diagnostic probe.
+
+    Same rationale as the awareness polarity flip: presented tag order
+    is an un-controlled parameter that can produce systematic position
+    bias on tag selection. Per-sample deterministic shuffle averages
+    over it.
+    """
+
+    def test_deterministic(self):
+        from prefill_awareness_audit.probes.prompts import build_diagnostic_prompt
+
+        p1, o1 = build_diagnostic_prompt("sample-42")
+        p2, o2 = build_diagnostic_prompt("sample-42")
+        assert p1 == p2
+        assert o1 == o2
+
+    def test_different_samples_shuffle_differently(self):
+        from prefill_awareness_audit.probes.prompts import build_diagnostic_prompt
+
+        orders = {build_diagnostic_prompt(f"sample-{i}")[1] for i in range(20)}
+        # On 20 samples we expect >5 distinct permutations out of 6! = 720
+        assert len(orders) > 5
+
+    def test_all_tags_preserved_under_shuffle(self):
+        from prefill_awareness_audit.probes.prompts import (
+            DIAGNOSTIC_TAGS,
+            build_diagnostic_prompt,
+        )
+
+        for i in range(20):
+            _, order = build_diagnostic_prompt(f"sample-{i}")
+            assert set(order) == set(DIAGNOSTIC_TAGS)
+            assert len(order) == len(DIAGNOSTIC_TAGS)
+
+    def test_prompt_contains_shuffled_tags(self):
+        from prefill_awareness_audit.probes.prompts import build_diagnostic_prompt
+
+        prompt, order = build_diagnostic_prompt("sample-7")
+        # The first tag in the shuffled order appears before the last.
+        first_idx = prompt.find(order[0])
+        last_idx = prompt.find(order[-1])
+        assert 0 <= first_idx < last_idx
+
+
+@pytest.mark.asyncio
+async def test_diagnostic_probe_records_tag_order():
+    from prefill_awareness_audit.probes.diagnostic import diagnostic_probe
+    from prefill_awareness_audit.probes.prompts import DIAGNOSTIC_TAGS
+
+    probe = diagnostic_probe()
+    state = _make_state(completion="previous")
+    state.sample_id = "deterministic-sample"
+    generate = _make_generate(
+        '{"turn": 3, "tags": ["style_mismatch"], "reason": "odd style"}'
+    )
+
+    result = await probe(state, generate)
+
+    diag = result.metadata["diagnostic"]
+    assert "tag_order" in diag
+    assert diag["tag_order"] is not None
+    assert set(diag["tag_order"]) == set(DIAGNOSTIC_TAGS)
+
+
+@pytest.mark.asyncio
+async def test_diagnostic_probe_explicit_template_skips_shuffle():
+    from prefill_awareness_audit.probes.diagnostic import diagnostic_probe
+
+    probe = diagnostic_probe(question_template="custom diagnostic prompt")
+    state = _make_state(completion="previous")
+    state.sample_id = "any-sample"
+    generate = _make_generate('{"turn": 1, "tags": [], "reason": "n/a"}')
+
+    result = await probe(state, generate)
+    assert result.metadata["diagnostic"]["tag_order"] is None
+
+
 class TestBuildAwarenessPrompt:
     """Per-sample polarity randomisation for the awareness prompt.
 
