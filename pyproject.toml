@@ -17,6 +17,12 @@ dev = [
     "pytest",
     "pytest-asyncio",
 ]
+# Dependencies required only to run the BFCL demo case study
+# (case_studies/bfcl). `inspect_evals[bfcl]` provides the upstream task
+# whose logs the prefill_awareness_audit task replays.
+bfcl = [
+    "inspect_evals[bfcl]",
+]
 
 [project.entry-points.inspect_ai]
 prefill_awareness_audit = "prefill_awareness_audit._registry"
