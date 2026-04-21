@@ -18,7 +18,7 @@ src/prefill_awareness_audit/
     prompts.py                   Centralized prompt templates, constants, output schemas
     _util.py                     Shared helpers (tool stubs, shared judge-call helper)
     fork.py                      forked_probes() -- runs probes in parallel via Inspect's fork()
-    awareness.py                 Combined attribution + confidence (one prompt, one call)
+    awareness.py                 Graded 5-point authorship-certainty probe (one prompt, one call)
     reflection.py                Free-text first-person reflection + LLM judge
     persona.py                   User-persona role-swap + LLM judge (Cywiński)
     multiple_choice.py           Shuffled 9-option MCQ latent probe (opt-in, A/B baseline)
@@ -156,7 +156,7 @@ Each eval run produces a complete awareness profile via Inspect's `@metric` syst
 
 The audit scorer uses a mixed-list metrics spec:
 
-- **Top-level metrics** (Tier 2): Custom `@metric` functions that receive the full `SampleScore` with complete `Score.value` dict and `Score.metadata`. They return `dict[str, float]` which Inspect expands into individual `EvalMetric` entries. Used for awareness rates, confidence stats, coupling, etc.
+- **Top-level metrics** (Tier 2): Custom `@metric` functions that receive the full `SampleScore` with complete `Score.value` dict and `Score.metadata`. They return `dict[str, float]` which Inspect expands into individual `EvalMetric` entries. Used for awareness rates, attribution-score stats, coupling, etc.
 
 - **Per-field metrics** (Tier 1): Standard Inspect aggregators (`accuracy()`, `stderr()`) keyed to `Score.value` dict fields. Used only for benchmark-specific fields from `main_score_fields`.
 
@@ -166,7 +166,7 @@ All proportions include Wilson score 95% CI. All means include 95% CI. Every gro
 
 **Ground truth confusion matrix**: `recognition_rate` (TPR), `detection_rate` (TNR), `false_attribution_rate` (FPR), `miss_rate` (FNR) with Wilson CIs; `g_mean` (sqrt(TPR·TNR), no CI); `uncertain_rate` with Wilson CI. Reports `n_samples`, `n_classified`, `n_parse_fail`. Compares `attribution` (model claim) against `prefill_authentic` (ground truth from `source_model` metadata).
 
-**Tamper confidence**: `confidence_mean` with CI, `confidence_median`, `confidence_std`. Excludes unparseable responses (sentinel -1).
+**Graded attribution score**: `attribution_score_mean` with CI, `attribution_score_median`, `attribution_score_std`, `attribution_score_n_samples`. Ordinal -2..+2 Likert collapsed from the 5-point `AttributionLabel` (higher = stronger non-authorship claim). Excludes samples whose graded label didn't parse. Not a probability -- see `docs/design-decisions.md §3.2`.
 
 **Spontaneous awareness**: `spontaneous_rate` with Wilson CI.
 
@@ -176,7 +176,7 @@ All proportions include Wilson score 95% CI. All means include 95% CI. Every gro
 
 **Diagnostic tags**: Per-tag rates (`diagnostic_{tag}_rate`) with Wilson CIs, flagged turn mean/std. Excludes samples where diagnostic parsing failed.
 
-**Awareness-benchmark coupling** (only when `main_score_fields` non-empty): `coupling_{field}_given_self`, `coupling_{field}_given_not_self`, `coupling_{field}_cohens_d`, `coupling_{field}_confidence_corr` with Fisher z-transform CI.
+**Awareness-benchmark coupling** (only when `main_score_fields` non-empty): `coupling_{field}_given_self`, `coupling_{field}_given_not_self`, `coupling_{field}_cohens_d`, `coupling_{field}_attribution_corr` (Pearson vs the ordinal attribution score) and `coupling_{field}_latent_corr` (Pearson vs the graded latent consensus) with Fisher z-transform CIs.
 
 ### Statistical helpers
 
@@ -190,7 +190,7 @@ Implemented in `scoring/metrics.py` with numpy only (no scipy):
 ## Component responsibilities
 
 - **task_factory**: `make_audit_task()` is the primary API -- resolves defaults, loads data, applies interventions, wires probes, and wraps the scorer. `continuation_audit()` layers a fixed continuation solver chain on top. The sync/async split (interventions need async for model calls, but `@task` is sync) is handled internally via `ThreadPoolExecutor`.
-- **probes**: Solvers that run after generate() via forked execution (each probe gets an independent deepcopy of TaskState). Cannot influence the main behavioral score. Four active probes in the default set (awareness -- combined attribution+confidence, reflection -- free-text latent with LLM judge, persona -- user-persona role-swap with LLM judge, diagnostic -- reason tags), plus one opt-in latent probe (multiple_choice -- preserved MCQ as A/B baseline) and one passive scorer-side signal (spontaneous).
+- **probes**: Solvers that run after generate() via forked execution (each probe gets an independent deepcopy of TaskState). Cannot influence the main behavioral score. Four active probes in the default set (awareness -- graded 5-point authorship certainty, reflection -- free-text latent with LLM judge, persona -- user-persona role-swap with LLM judge, diagnostic -- reason tags), plus one opt-in latent probe (multiple_choice -- preserved MCQ as A/B baseline) and one passive scorer-side signal (spontaneous).
 - **interventions**: Each takes (samples, AuditProfile) and returns modified samples. Validates scope against `InterventionConstraints` before applying. Deterministic and rewrite share the scope parameterization.
 - **scoring**: audit_scorer wraps the original scorer, adding probe dimensions to Score and registering custom metrics for per-condition aggregation. metrics.py defines all custom @metric functions.
 - **analysis**: compare.py loads eval logs and builds cross-condition comparison tables. figures.py generates matplotlib visualizations.
@@ -202,7 +202,7 @@ Implemented in `scoring/metrics.py` with numpy only (no scipy):
 Reads eval-level metrics from log headers (fast, no sample loading). Produces:
 - Per-condition cards with full awareness profile
 - Delta summary table vs PROBE_ONLY
-- Optional figures (awareness bars, confidence distribution, delta heatmap)
+- Optional figures (awareness bars, attribution-score distribution, delta heatmap)
 
 No classification -- presents numbers only, the reader interprets.
 

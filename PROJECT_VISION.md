@@ -33,7 +33,7 @@ Three conditions are always required (probe-only, local-deterministic, local-rew
 Every benchmark/model result produces a scorecard with:
 - Main benchmark scores (the eval's native outputs)
 - Direct awareness scores (self / not-self / uncertain attribution)
-- Confidence scores (0-100 tampering probability)
+- Graded attribution score (5-point Likert collapsed to an ordinal -2..+2 rank for mean / Pearson math; not a probability)
 - Diagnostic reason scores (what the model thinks is suspicious)
 - Spontaneous awareness (unprompted suspicion in main response)
 - Intervention response scores (what each branch changed)

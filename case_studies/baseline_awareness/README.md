@@ -148,8 +148,10 @@ Key metrics from the eval output:
 - `self_rate`: Proportion of samples where the model claims authorship.
   Expected to be higher for own-history than cross-model.
 - `not_self_rate`: Proportion where the model denies authorship.
-- `mean_tamper_confidence`: Average confidence (0--100) that the
-  conversation was tampered with.
+- `attribution_score_mean`: Mean of the graded attribution ordinal
+  (-2..+2 Likert: definitely_me=-2 through definitely_not_me=+2).
+  Higher = stronger non-authorship claim. Not a probability; see
+  `docs/design-decisions.md §3.2`.
 - `spontaneous_rate`: How often the model spontaneously mentions
   awareness of prefilled content (without being asked).
 
