@@ -391,6 +391,96 @@ class TestSpontaneousDetection:
 # ---------------------------------------------------------------------------
 
 
+class TestBuildAwarenessPrompt:
+    """Per-sample polarity randomisation for the awareness prompt.
+
+    Rationale: 2026-04-21 reversed-order A/B showed a 30 % per-sample
+    disagreement rate between forward and reversed option orders, and
+    a 10 pp aggregate detection-rate swing on the same samples. The
+    builder deterministically flips per sample_id to average over
+    the bias.
+    """
+
+    def test_seeded_flip_is_deterministic(self):
+        from prefill_awareness_audit.probes.prompts import build_awareness_prompt
+
+        p1, r1 = build_awareness_prompt("sample-42")
+        p2, r2 = build_awareness_prompt("sample-42")
+        assert p1 == p2
+        assert r1 == r2
+
+    def test_different_sample_ids_produce_different_flips(self):
+        from prefill_awareness_audit.probes.prompts import build_awareness_prompt
+
+        flips = [build_awareness_prompt(f"sample-{i}")[1] for i in range(50)]
+        # Roughly balanced — tight bounds would be flaky on 50 flips,
+        # but all-same is a bug worth catching.
+        assert 0 < sum(flips) < 50
+        assert 10 < sum(flips) < 40  # ~50/50 expected, wide CI
+
+    def test_forward_and_reversed_options_both_present_across_samples(self):
+        from prefill_awareness_audit.probes.prompts import build_awareness_prompt
+
+        prompts = [build_awareness_prompt(f"sample-{i}")[0] for i in range(20)]
+        has_forward = any(
+            "definitely me | probably me" in p for p in prompts
+        )
+        has_reversed = any(
+            "definitely not me | probably not me" in p for p in prompts
+        )
+        assert has_forward
+        assert has_reversed
+
+    def test_continuation_variant_uses_before_anchor(self):
+        from prefill_awareness_audit.probes.prompts import build_awareness_prompt
+
+        prompt, _ = build_awareness_prompt("sample-1", continuation=True)
+        assert "before your last message" in prompt.lower()
+        default_prompt, _ = build_awareness_prompt("sample-1", continuation=False)
+        assert "before your last message" not in default_prompt.lower()
+
+    def test_parser_works_on_both_orderings(self):
+        from prefill_awareness_audit.probes.awareness import _match_graded_label
+
+        # Parser is position-agnostic and phrase-based — it matches on
+        # the label content in the model's response, not on the
+        # menu ordering shown to the model.
+        assert _match_graded_label("ATTRIBUTION: definitely not me") == AttributionLabel.DEFINITELY_NOT_ME
+        assert _match_graded_label("ATTRIBUTION: probably me") == AttributionLabel.PROBABLY_ME
+
+
+@pytest.mark.asyncio
+async def test_awareness_probe_records_reversed_order_flag():
+    from prefill_awareness_audit.probes.awareness import awareness_probe
+
+    probe = awareness_probe()
+    state = _make_state(completion="previous")
+    state.sample_id = "deterministic-sample"
+    generate = _make_generate("ATTRIBUTION: definitely me")
+
+    result = await probe(state, generate)
+
+    attr = result.metadata["attribution"]
+    assert "reversed_order" in attr
+    assert isinstance(attr["reversed_order"], bool)
+
+
+@pytest.mark.asyncio
+async def test_awareness_probe_explicit_template_skips_randomization():
+    from prefill_awareness_audit.probes.awareness import awareness_probe
+
+    # Passing question_template explicitly disables per-sample polarity
+    # (useful for tests and for pre-rendered templates).
+    probe = awareness_probe(question_template="custom prompt text")
+    state = _make_state(completion="previous")
+    state.sample_id = "any-sample"
+    generate = _make_generate("ATTRIBUTION: uncertain")
+
+    result = await probe(state, generate)
+
+    assert result.metadata["attribution"]["reversed_order"] is False
+
+
 @pytest.mark.asyncio
 async def test_awareness_probe_stores_graded_metadata():
     from prefill_awareness_audit.probes.awareness import awareness_probe

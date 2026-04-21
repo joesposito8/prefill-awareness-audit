@@ -21,10 +21,7 @@ from .probes import (
     persona_probe,
     reflection_probe,
 )
-from .probes.prompts import (
-    CONTINUATION_AWARENESS_QUESTION,
-    REFLECTION_USER_CONTINUATION,
-)
+from .probes.prompts import REFLECTION_USER_CONTINUATION
 from .scoring import audit_scorer
 from .types import AuditProfile, Condition
 
@@ -226,7 +223,7 @@ def continuation_audit(
     solver_chain.append(generate(tool_calls="none"))
 
     continuation_probes: list[Solver] = [
-        awareness_probe(question_template=CONTINUATION_AWARENESS_QUESTION),
+        awareness_probe(continuation=True),
         reflection_probe(question_template=REFLECTION_USER_CONTINUATION),
         persona_probe(),
         diagnostic_probe(),

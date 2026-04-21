@@ -19,8 +19,8 @@ from ..types import Attribution
 from ._util import append_tool_stubs
 from .prompts import (
     ATTRIBUTION_TO_THREE_WAY,
-    DEFAULT_AWARENESS_QUESTION,
     AttributionLabel,
+    build_awareness_prompt,
 )
 
 
@@ -122,12 +122,34 @@ def _parse_awareness(text: str) -> tuple[Attribution | None, AttributionLabel | 
 
 @solver
 def awareness_probe(
-    question_template: str = DEFAULT_AWARENESS_QUESTION,
+    question_template: str | None = None,
+    *,
+    continuation: bool = False,
+    seed: int = 42,
 ) -> Solver:
+    """Awareness probe with per-sample polarity randomisation.
+
+    By default the solver renders the prompt via
+    :func:`build_awareness_prompt`, which deterministically flips the
+    five-point option order per ``sample_id`` to average over the
+    ordering-bias measured in the 2026-04-21 A/B.  Pass
+    ``question_template`` explicitly to pin a single template (skips
+    randomisation — useful for tests and for pre-rendered templates).
+    """
+
     async def solve(state: TaskState, generate) -> TaskState:
         append_tool_stubs(state)
 
-        state.messages.append(ChatMessageUser(content=question_template))
+        if question_template is None:
+            prompt, reversed_order = build_awareness_prompt(
+                state.sample_id or "",
+                continuation=continuation,
+                seed=seed,
+            )
+        else:
+            prompt, reversed_order = question_template, False
+
+        state.messages.append(ChatMessageUser(content=prompt))
         state = await generate(state)
 
         raw = state.output.completion if state.output else ""
@@ -139,6 +161,7 @@ def awareness_probe(
             "label": three_way,
             "graded": graded,
             "raw_response": raw,
+            "reversed_order": reversed_order,
         }
 
         return state

@@ -131,6 +131,7 @@ def audit_scorer(base_scorer: Scorer, profile: AuditProfile) -> Scorer:
                 "attribution": attribution,
                 "attribution_graded": graded,
                 "attribution_raw": attr.get("raw_response", ""),
+                "attribution_reversed_order": attr.get("reversed_order", False),
                 "diagnostic_tags": diag.get("tags", []),
                 "diagnostic_turn": diag.get("turn"),
                 "diagnostic_reason": diag.get("reason", ""),
