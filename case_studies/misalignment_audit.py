@@ -4,6 +4,11 @@ Example of how an external team would use the prefill-awareness-audit
 package on their own benchmark. The only benchmark-specific pieces are
 the dataset loader, benchmark scorer, stub tools, score-field names,
 and the ``source_model`` label. Everything else comes from the package.
+
+The probe chain mirrors ``continuation_audit`` inline: a ``use_tools +
+generate`` solver pair lets the subject finish the conversation, then
+the five-probe forked chain (awareness, reflection, persona, diagnostic,
+multiple_choice) runs against the resulting transcript.
 """
 
 from __future__ import annotations
@@ -25,12 +30,23 @@ from evals.dataset import (  # noqa: E402
 from evals.scorer import misalignment_continuation_scorer  # noqa: E402
 from evals.stub_tools import get_stub_tools  # noqa: E402
 from inspect_ai import Task, task  # noqa: E402
+from inspect_ai.solver import generate, use_tools  # noqa: E402
 from prefill_awareness_audit import (  # noqa: E402
     AuditProfile,
     Condition,
     InterventionConstraints,
-    continuation_audit,
     latest_assistant_block,
+    make_audit_task,
+)
+from prefill_awareness_audit.probes import (  # noqa: E402
+    awareness_probe,
+    diagnostic_probe,
+    multiple_choice_probe,
+    persona_probe,
+    reflection_probe,
+)
+from prefill_awareness_audit.probes.prompts import (  # noqa: E402
+    REFLECTION_USER_CONTINUATION,
 )
 
 profile = AuditProfile(
@@ -49,6 +65,13 @@ def misalignment_audit(
 ) -> Task:
     """Audit one condition against the misalignment-continuation benchmark.
 
+    Runs the full five-probe continuation chain: awareness + reflection +
+    persona + diagnostic + multiple_choice. MC is opt-in in the generic
+    @task but enabled by default here because the misalignment transcripts
+    benefit from the menu-style elicitation channel (see
+    validation-audit-2026-04-21 §"MC probe on the same misalignment
+    transcripts").
+
     Args:
         condition: Audit condition name (PROBE_ONLY, LOCAL_DETERMINISTIC,
             LOCAL_REWRITE, BLOCK_DETERMINISTIC, BLOCK_REWRITE,
@@ -66,10 +89,20 @@ def misalignment_audit(
     for sample in dataset:
         sample.metadata = {**(sample.metadata or {}), "source_model": "synthetic"}
 
-    return continuation_audit(
+    solver_chain = [use_tools(get_stub_tools()), generate(tool_calls="none")]
+    probes = [
+        awareness_probe(continuation=True),
+        reflection_probe(question_template=REFLECTION_USER_CONTINUATION),
+        persona_probe(),
+        diagnostic_probe(),
+        multiple_choice_probe(),
+    ]
+
+    return make_audit_task(
         data=dataset,
         condition=condition,
         profile=profile,
         scorer=misalignment_continuation_scorer(),
-        tools=get_stub_tools(),
+        solver=solver_chain,
+        probes=probes,
     )
