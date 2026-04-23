@@ -1,3 +1,6 @@
 [submodule "case_studies/misalignment_continuation"]
 	path = case_studies/misalignment_continuation
 	url = https://github.com/UKGovernmentBEIS/misalignment-continuation.git
+[submodule "case_studies/insider_trading"]
+	path = case_studies/insider_trading
+	url = https://github.com/ApolloResearch/insider-trading
