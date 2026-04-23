@@ -13,3 +13,4 @@ Ground truth architecture via source_model metadata + BFCL demo case study. PROB
 - Probes import from centralized prompts.py -- add new prompts there, not in probe modules
 - Parsers use Inspect AI internals (inspect_ai._util.pattern, inspect_ai._util.text) -- pin inspect-ai version carefully
 - diagnostic_probe uses ResponseSchema for structured output with try/except fallback for models that don't support it
+- Log directory convention: write all cells of a multi-cell audit into a single flat `--log-dir`. Encode cell identity in the filename prefix (`misalign-haiku45_<timestamp>.eval`), not in a subdir. Inspect's default viewer (`inspect view --log-dir X`) walks subdirs shallowly, so per-cell subdirs hide logs from the list view.
