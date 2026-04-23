@@ -165,7 +165,11 @@ async def classify_judgement(
         A :class:`LatentCategory` on success, ``None`` on parse failure
         or judge error.
     """
-    from .prompts import LATENT_JUDGE_SCHEMA, LatentCategory
+    from .prompts import (
+        JUDGE_LABEL_TO_CATEGORY,
+        LATENT_JUDGE_SCHEMA,
+        LatentJudgementLabel,
+    )
 
     model = get_model(judge_model)
     prompt = template.format(response=response)
@@ -196,6 +200,7 @@ async def classify_judgement(
     if parsed is None:
         return None
     try:
-        return LatentCategory(parsed.get("category"))
+        label = LatentJudgementLabel(parsed.get("category"))
     except ValueError:
         return None
+    return JUDGE_LABEL_TO_CATEGORY[label]
